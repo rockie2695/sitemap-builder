@@ -219,4 +219,26 @@ test.describe('sitemap builder E2E / 端對端', () => {
     await expect(full).toBeChecked()
     await expect(page.getByRole('radio', { name: '当前时段' })).not.toBeChecked()
   })
+
+  test('excludes redirected pages on request / 排除重定向頁面', async ({ page }) => {
+    await startCrawl(page, `${FIXTURE}/redir/`)
+    await waitForFinish(page)
+
+    // `/redir/old.html` 301s to `/redir/new.html`, so the table marks it.
+    await expect(page.getByTitle('抓取时此地址被重定向到其它位置')).toBeVisible()
+
+    // Without the switch both records are exported.
+    const allPromise = page.waitForEvent('download')
+    await page.getByRole('button', { name: /导出 sitemap.xml/ }).click()
+    const all = await readDownload(await allPromise)
+    expect(all).toContain(`${FIXTURE}/redir/old.html`)
+
+    // With the switch on, the bounced address disappears.
+    await toggleSwitch(page, '排除重定向页面')
+    const filteredPromise = page.waitForEvent('download')
+    await page.getByRole('button', { name: /导出 sitemap.xml/ }).click()
+    const filtered = await readDownload(await filteredPromise)
+    expect(filtered).not.toContain('/redir/old.html')
+    expect(filtered).toContain(`${FIXTURE}/redir/`)
+  })
 })

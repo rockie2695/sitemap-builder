@@ -25,6 +25,7 @@ function record(url: string, extra: Partial<UrlRecord> = {}): UrlRecord {
     pageTitle: null,
     finalUrl: null,
     lastModified: null,
+    redirected: false,
     foundLinks: 0,
     queuedAt: NOW,
     startedAt: NOW,

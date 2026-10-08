@@ -27,6 +27,7 @@ import { ViewTabs, type ViewMode } from '@/components/dashboard/ViewTabs'
 import { useI18n } from '@/components/providers/LocaleProvider'
 import { useCrawler } from '@/hooks/crawler'
 import { useStoredState } from '@/hooks/useStoredState'
+import { shouldExcludeFromExport } from '@/lib/crawler/redirect'
 import { formatDuration } from '@/lib/stats'
 
 /** localStorage key for the remembered view mode. */
@@ -48,10 +49,10 @@ export function SitemapBuilder() {
     setInputError(result.ok ? null : (result.error ?? t('error.invalidUrl')))
   }, [crawler, inputUrl, t])
 
-  /** Records that should be exported, honouring the "exclude failed" switch. */
+  /** Records that should be exported, honouring the exclusion switches. */
   const exportableRecords = useMemo(
-    () => (options.excludeFailed ? records.filter((record) => record.status !== 'failed') : records),
-    [records, options.excludeFailed],
+    () => records.filter((record) => !shouldExcludeFromExport(record, options)),
+    [records, options],
   )
 
   /** Origin used for `<loc>` values inside a generated sitemapindex.xml. */

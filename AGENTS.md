@@ -97,8 +97,10 @@ npm run dev         # dev server; only ONE dev instance per project is allowed (
   並發仍維持每 `delayMs` 啟動一個請求的全域節奏；先檢查佇列是否為空，再檢查頁數上限。
 - **Redirects**: `goto` follows them, `finalUrl` is stored, and the in-scope final
   URL is registered as seen so it is not crawled twice. `useFinalUrl` switches the
-  export to the final address. 重定向會被跟隨，最終位址會登記為已見；`useFinalUrl`
-  控制匯出使用最終位址。
+  export to the final address. The reducer also sets `record.redirected` (via
+  `isRedirected`), which drives the `↪` marker and the **Exclude redirected** switch.
+  重定向會被跟隨，最終位址會登記為已見；`useFinalUrl` 控制匯出使用最終位址，
+  reducer 另會設定 `record.redirected`（透過 `isRedirected`）。
 - **No cross-domain crawling**: the scope is always the start URL's `origin` plus
   `pathPrefix`. 不做跨域抓取。
 

@@ -86,6 +86,38 @@ describe('task lifecycle / 任務生命週期', () => {
     expect(state.order).toHaveLength(3)
   })
 
+  it('flags a record whose fetch ended on another URL / 標記被重定向的記錄', () => {
+    const state = crawlReducer(
+      crawlReducer(started(), { type: 'page/start', url: TASK.startUrl, pendingCount: 0, now: NOW }),
+      {
+        type: 'page/result',
+        url: TASK.startUrl,
+        ok: true,
+        response: { ...okResponse, finalUrl: 'https://example.com/test/moved' },
+        discovered: [],
+        pendingCount: 0,
+        now: NOW + 1500,
+      },
+    )
+    expect(state.records.get(TASK.startUrl)?.redirected).toBe(true)
+  })
+
+  it('does not flag a trailing-slash-only difference / 僅差末尾斜線不算重定向', () => {
+    const state = crawlReducer(
+      crawlReducer(started(), { type: 'page/start', url: TASK.startUrl, pendingCount: 0, now: NOW }),
+      {
+        type: 'page/result',
+        url: TASK.startUrl,
+        ok: true,
+        response: { ...okResponse, finalUrl: 'https://example.com/test' },
+        discovered: [],
+        pendingCount: 0,
+        now: NOW + 1500,
+      },
+    )
+    expect(state.records.get(TASK.startUrl)?.redirected).toBe(false)
+  })
+
   it('marks a reachable 404 as failed / 可達的 404 記為失敗', () => {
     const state = crawlReducer(
       crawlReducer(started(), { type: 'page/start', url: TASK.startUrl, pendingCount: 0, now: NOW }),

@@ -213,6 +213,14 @@ export function ExportBar({ records, options, onOptionsChange, task, baseUrl }: 
             <span className="text-muted-foreground">{t('export.excludeFailed')}</span>
           </label>
 
+          <label className="flex items-center gap-2" title={t('export.excludeRedirectedHint')}>
+            <Switch
+              checked={options.excludeRedirected}
+              onCheckedChange={(checked) => onOptionsChange({ excludeRedirected: checked })}
+            />
+            <span className="text-muted-foreground">{t('export.excludeRedirected')}</span>
+          </label>
+
           <label className="flex items-center gap-2" title={t('export.lastmodHint')}>
             <Switch
               checked={options.includeLastmod}

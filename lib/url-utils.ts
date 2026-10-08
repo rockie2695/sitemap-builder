@@ -225,6 +225,25 @@ export function looksLikeHtmlPage(url: string): boolean {
 }
 
 /**
+ * Whether two URLs refer to the same resource after normalization.
+ *
+ * @param a       First URL.
+ * @param b       Second URL.
+ * @param options Same query policy used for the crawl.
+ *
+ * @example
+ * isSameUrl('https://x.test/a', 'https://x.test/a/', {})       // true
+ * isSameUrl('https://x.test/a', 'https://x.test/a?x=1', {})    // false
+ * isSameUrl('https://x.test/a', 'https://x.test/a?x=1', { stripQuery: true }) // true
+ */
+export function isSameUrl(a: string, b: string, options: NormalizeOptions = {}): boolean {
+  const left = normalizeUrl(a, a, options)
+  const right = normalizeUrl(b, b, options)
+  if (!left || !right) return a.trim() === b.trim()
+  return left === right
+}
+
+/**
  * Short path for display: the URL minus its origin and hash.
  *
  * @param url Absolute URL.

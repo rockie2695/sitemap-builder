@@ -145,6 +145,10 @@ export const en: Dictionary = {
   'export.count': '{count} to export',
   'export.optionsTitle': 'sitemap.xml options',
   'export.excludeFailed': 'Exclude failed',
+  'export.excludeRedirected': 'Exclude redirected',
+  'export.excludeRedirectedHint':
+    'Drop pages whose address changed after a redirect (a trailing slash or a stripped query does not count)',
+  'urls.redirectedHint': 'This address redirected elsewhere when it was fetched',
   'export.lastmod': 'lastmod',
   'export.lastmodHint': 'Prefer the page Last-Modified header, else the crawl time',
   'export.priority': 'priority',

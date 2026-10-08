@@ -135,6 +135,7 @@ All of them are stored in the task snapshot, so a resume keeps your settings.
 | `priority` + strategy | off | Emit `<priority>`; strategy = link depth / absolute path depth / relative path depth |
 | `changefreq` | off | Emit `<changefreq>`; literal value or "auto by depth" |
 | Exclude failed | off | Drop failed pages from every export |
+| Exclude redirected | off | Drop pages whose address changed after a redirect (a trailing slash or a stripped query does not count) |
 | Split files + per-file limit | off, 1000 | `sitemap-1..N.xml` + `sitemapindex.xml` past the limit |
 | Readable URLs | off | Decode non-ASCII path/query instead of percent-encoding (host stays punycode) |
 | Use final URL | off | Export the post-redirect address instead of the requested one |
@@ -157,6 +158,8 @@ the host → decode if readable.
 **Redirects**: `page.goto` follows them, the final status and URL are recorded, and an
 in-scope final URL is registered as already-seen so the same page is not crawled twice.
 A link discovered *after* its redirect target was crawled can still cost one extra request.
+Redirected records are flagged (`↪` in the URL table) and can be excluded from the
+exports with **Exclude redirected**.
 
 **Language**: the UI ships in English, Traditional Chinese and Simplified Chinese; the
 choice is remembered and otherwise detected from the browser. The crawl log, the log

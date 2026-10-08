@@ -12,6 +12,8 @@
  */
 import type { LogEntry, UrlRecord } from '@/types/crawl'
 
+import { isRedirected } from '@/lib/crawler/redirect'
+
 import { DEFAULT_OPTIONS, HISTORY_LIMIT, LOG_LIMIT, MAX_CONSECUTIVE_ERRORS } from './constants'
 import type { CrawlAction, CrawlState, LogDraft } from './types'
 import type { CrawlRuntimeStats } from '@/types/crawl'
@@ -66,6 +68,7 @@ export function makeRecord(
     pageTitle: null,
     finalUrl: null,
     lastModified: null,
+    redirected: false,
     foundLinks: 0,
     queuedAt: now,
     startedAt: null,
@@ -361,6 +364,7 @@ export function crawlReducer(state: CrawlState, action: CrawlAction): CrawlState
           httpStatus: response.httpStatus,
           pageTitle: response.pageTitle,
           finalUrl: response.finalUrl,
+          redirected: isRedirected(action.url, response.finalUrl, state.options.stripQuery),
           lastModified: response.lastModified ?? null,
           foundLinks: response.links.length,
           durationMs: response.durationMs,

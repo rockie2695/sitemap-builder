@@ -58,6 +58,8 @@ export const DEFAULT_OPTIONS: CrawlOptions = {
   changefreq: 'auto',
   /** Keep failed pages out of the exported sitemap. */
   excludeFailed: false,
+  /** Keep redirected pages out of the exported sitemap. */
+  excludeRedirected: false,
   /** Split the export into several sitemap files when it grows past the limit. */
   splitSitemaps: false,
   /** URLs per generated sitemap file. */

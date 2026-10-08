@@ -217,15 +217,25 @@ export function UrlList({ records, loading = false }: UrlListProps) {
                       {t(`status.${record.status}`)}
                     </span>
 
-                    <a
-                      href={record.url}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                      title={record.url}
-                      className="truncate font-mono text-[11px] text-foreground hover:underline"
-                    >
-                      {record.url}
-                    </a>
+                    <span className="flex min-w-0 items-center gap-1">
+                      <a
+                        href={record.url}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        title={record.url}
+                        className="truncate font-mono text-[11px] text-foreground hover:underline"
+                      >
+                        {record.url}
+                      </a>
+                      {record.redirected ? (
+                        <span
+                          className="shrink-0 text-amber-600 dark:text-amber-400"
+                          title={t('urls.redirectedHint')}
+                        >
+                          ↪
+                        </span>
+                      ) : null}
+                    </span>
 
                     <span
                       className="truncate text-[11px] text-muted-foreground"

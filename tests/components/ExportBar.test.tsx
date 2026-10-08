@@ -33,6 +33,7 @@ function record(url: string, extra: Partial<UrlRecord> = {}): UrlRecord {
     pageTitle: 'T',
     finalUrl: null,
     lastModified: 'Tue, 01 Sep 2026 08:30:00 GMT',
+    redirected: false,
     foundLinks: 0,
     queuedAt: NOW,
     startedAt: NOW,
@@ -172,6 +173,11 @@ describe('ExportBar', () => {
 
     await user.click(switchFor('Exclude failed'))
     expect(onOptionsChange).toHaveBeenLastCalledWith(expect.objectContaining({ excludeFailed: true }))
+
+    await user.click(switchFor('Exclude redirected'))
+    expect(onOptionsChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ excludeRedirected: true }),
+    )
 
     await user.click(switchFor('lastmod'))
     expect(onOptionsChange).toHaveBeenLastCalledWith(expect.objectContaining({ includeLastmod: false }))

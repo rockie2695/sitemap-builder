@@ -32,6 +32,7 @@ function record(status: UrlRecord['status'], extra: Partial<UrlRecord> = {}): Ur
     pageTitle: null,
     finalUrl: null,
     lastModified: null,
+    redirected: false,
     foundLinks: 0,
     queuedAt: NOW - 60_000,
     startedAt: NOW - 60_000,

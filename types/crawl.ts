@@ -36,6 +36,8 @@ export interface UrlRecord {
   finalUrl: string | null
   /** Raw `Last-Modified` header; the preferred source for sitemap lastmod. */
   lastModified: string | null
+  /** True when the fetch ended on a different URL (a redirect was followed). */
+  redirected: boolean
   /** Number of links found on this page. */
   foundLinks: number
   /** Failure reason. */
@@ -91,6 +93,8 @@ export interface CrawlOptions {
   changefreq: ChangefreqSetting
   /** Keep failed pages out of the export. */
   excludeFailed: boolean
+  /** Keep pages that ended on a different URL (redirected) out of the export. */
+  excludeRedirected: boolean
   /** Split into several sitemap files when over the per-file limit. */
   splitSitemaps: boolean
   /** URLs per generated sitemap file. */

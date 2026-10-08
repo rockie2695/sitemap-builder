@@ -37,6 +37,7 @@ function record(extra: Partial<UrlRecord> = {}): UrlRecord {
     pageTitle: 'Page A',
     finalUrl: null,
     lastModified: 'Tue, 01 Sep 2026 08:30:00 GMT',
+    redirected: false,
     foundLinks: 3,
     queuedAt: NOW,
     startedAt: NOW,

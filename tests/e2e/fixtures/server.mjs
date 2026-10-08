@@ -71,6 +71,11 @@ function writeFixtures() {
     page('retry root', '<a href="flaky.html">flaky</a>'),
   )
 
+  // A redirecting page, used by the redirect-exclusion test.
+  mkdirSync(join(ROOT, 'redir'), { recursive: true })
+  writeFileSync(join(ROOT, 'redir', 'index.html'), page('redir root', '<a href="old.html">old</a>'))
+  writeFileSync(join(ROOT, 'redir', 'new.html'), page('new page', '<a href="index.html">back</a>'))
+
   // Non-ASCII paths, used by the readable-URL export test.
   mkdirSync(join(ROOT, 'zh'), { recursive: true })
   writeFileSync(join(ROOT, 'zh', 'index.html'), page('中文目录', '<a href="中文.html">中文页面</a>'))
@@ -88,6 +93,13 @@ createServer((request, response) => {
   // transport error. Used by the retry E2E test.
   if (pathname.endsWith('/flaky.html')) {
     request.socket.destroy()
+    return
+  }
+
+  // A permanent redirect to a different page, used by the redirect-exclusion test.
+  if (pathname === '/redir/old.html') {
+    response.writeHead(301, { Location: '/redir/new.html' })
+    response.end()
     return
   }
 

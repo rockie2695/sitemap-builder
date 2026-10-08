@@ -35,6 +35,7 @@ function record(url: string, depth: number, extra: Partial<UrlRecord> = {}): Url
     pageTitle: 'T',
     finalUrl: null,
     lastModified: null,
+    redirected: false,
     foundLinks: 0,
     queuedAt: CRAWLED_AT,
     startedAt: CRAWLED_AT,
