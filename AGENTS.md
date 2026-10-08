@@ -1,0 +1,94 @@
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
+
+---
+
+# Project Guide for AI Agents / AI 代理的專案指南
+
+*(This section is maintained by the project, outside the auto-generated block above. / 本區段由專案維護，位於上方自動產生的區塊之外。)*
+
+## What this app is / 應用程式簡介
+
+A sitemap generator: the server renders pages headlessly (Playwright) and extracts
+links; the client drives the queue, dedup and exports. Docs: [README.md](./README.md)
+(English) and [README.zh-TW.md](./README.zh-TW.md) (Traditional Chinese).
+
+sitemap 產生器：伺服器以 Playwright 無頭渲染頁面並擷取連結；前端驅動佇列、去重與匯出。
+
+## Commands / 指令
+
+```bash
+npm run verify      # typecheck + lint + vitest — run before finishing any task
+npm run test        # vitest run (unit + component + API)
+npm run e2e         # playwright test — needs `npm run build` first; uses :3100 (prod) + :4321 (fixture)
+npm run build       # production build
+npm run dev         # dev server; only ONE dev instance per project is allowed (lockfile)
+```
+
+## Architecture map / 架構地圖
+
+| Path | Role |
+| --- | --- |
+| `hooks/crawler/reducer.ts` | Pure state machine (`crawlReducer`) — no refs, no timers, no network |
+| `hooks/crawler/engine.ts` | Crawl loop; OWNS the FIFO `queue` and the `seen` dedup set |
+| `hooks/crawler/request.ts` | `/api/crawl` HTTP layer; partial-success rules |
+| `hooks/crawler/usePersistence.ts` | Snapshot save/restore effects |
+| `hooks/crawler/index.ts` | `useCrawler()` composition; the only import the UI needs |
+| `lib/crawler/crawlPage.ts` | Server-side page fetch; injectable browser for tests |
+| `lib/crawler/schema.ts` | zod schemas — single source of truth for the wire format |
+| `lib/sitemap/*` | Entry building, XML serialisation, splitting |
+| `lib/export/*` | CSV/JSON/log/ZIP + browser downloads |
+| `components/dashboard/*` | All UI; `SitemapBuilder.tsx` is the shell |
+
+## Invariants — do not break these / 不變量——請勿破壞
+
+1. **The queue lives in the engine, not in the reducer.** Discovery happens in the
+   loop (`registerUrl`) BEFORE the `page/result` dispatch; the reducer only builds
+   the view model. 佇列屬於引擎：發現（`registerUrl`）在 dispatch 之前完成。
+2. **`crawlReducer` must stay pure.** No `Date.now()`, no refs, no side effects.
+   Keep it unit-testable. 狀態機必須保持純函式。
+3. **A reachable 4xx/5xx page is `failed`, not `done`** — it must never enter the
+   sitemap, but its links are still collected. 可達的 4xx/5xx 記為失敗，但連結仍要收集。
+4. **The start URL is opened as typed** (trailing slash preserved) and its
+   slash-stripped form is registered as seen. 起始網址原樣訪問，去斜線形式登記為已見。
+5. **SSRF guard is on by default** (`ALLOW_PRIVATE_TARGETS=1` opts out). Local
+   crawling and the E2E fixture require the override. SSRF 預設開啟。
+6. **Virtual scrolling is ref-free by design.** eslint-config-next's
+   `react-hooks/refs` flags any value returned from a hook that touches a ref —
+   never return refs from hooks, and never read `.current` during render.
+   虛擬滾動刻意不用 ref，也不要在渲染期讀取 `.current`。
+7. **Every non-submit button inside a form needs `type="button"`**, otherwise it
+   submits and silently restarts the task. 表單內的非送出按鈕必須宣告 `type="button"`。
+8. **Imports go at the top of the file.** 呼叫一律置於檔案頂部。
+9. **The `shadcn` devDependency must stay on 4.x.** `app/globals.css` imports
+   `shadcn/tailwind.css`, which only the modern CLI package ships; `shadcn@1.0.0` on
+   npm is an empty placeholder and breaks the dev compile.
+   `shadcn` 必須維持 4.x，否則 `shadcn/tailwind.css` 無法解析。
+
+## Known environment pitfalls / 已知環境陷阱
+
+- **Console Ninja (Wallaby.js VS Code extension)** hooks `next dev` and, in its
+  *preview* Turbopack integration, can serve truncated chunks → `Uncaught
+  SyntaxError: Invalid or unexpected token` in a `react-dom_development` chunk, and
+  form submissions falling back to a native GET (`/?`). Not an app bug and not a
+  `.next` cache issue. Diagnose with `node --check <chunk>.js`.
+  Console Ninja 的 preview Turbopack 整合會截斷 chunk，導致語法錯誤與表單原生提交。
+- The dev server has a per-project lockfile: only **one** `next dev` per project.
+  E2E therefore uses the production server on :3100. dev 每個專案只允許一個實例。
+
+## Conventions / 慣例
+
+- Comments and docs are **bilingual**: English first, then Traditional Chinese.
+  註釋與文件為雙語：先英文，後繁體中文。
+- All UI copy is Simplified Chinese. 介面文案為簡體中文。
+- `npm run verify` must pass before finishing any change; run `npm run e2e` after
+  touching `lib/`, `hooks/` or any component. 完成任何變更前必須通過 verify。
+- E2E tests run against the PRODUCTION build — rebuild after code changes, or the
+  suite tests stale code. E2E 針對生產建置，改碼後必須重新 build。

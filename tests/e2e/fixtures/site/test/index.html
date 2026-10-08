@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>测试首页</title></head>
+<body>
+<h1>测试首页</h1>
+<a href="a.html">页面 A</a>
+<a href="./a.html">页面 A（重复）</a>
+<a href="a.html#section">页面 A（hash）</a>
+<a href="doc.pdf">PDF（应跳过）</a>
+<a href="b.html?utm_source=weibo&page=2">页面 B（带参数）</a>
+<a href="https://www.google.com/">外站（应过滤）</a>
+<a href="/testing.html">越界（应过滤）</a>
+<div id="spa"></div>
+<script>setTimeout(() => { document.getElementById("spa").innerHTML = '<a href="c.html">SPA 链接</a>' }, 200)</script>
+</body></html>

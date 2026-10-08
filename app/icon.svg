@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!--
+    Application icon: a three-node sitemap tree.
+    Next.js App Router picks this file up automatically as the favicon.
+
+    應用程式圖示：三節點的 sitemap 樹狀圖。
+    Next.js App Router 會自動將此檔案作為 favicon。
+  -->
+  <rect width="32" height="32" rx="7" fill="#0f172a" />
+  <g stroke="#10b981" stroke-width="1.8" fill="none" stroke-linecap="round">
+    <path d="M16 9v4" />
+    <path d="M8 21v-4h16v4" />
+  </g>
+  <g fill="#10b981">
+    <rect x="12" y="4" width="8" height="5" rx="1.5" />
+    <rect x="4" y="21" width="8" height="5" rx="1.5" />
+    <rect x="20" y="21" width="8" height="5" rx="1.5" />
+  </g>
+</svg>
