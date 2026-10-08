@@ -42,10 +42,16 @@ function input(extra: Partial<SaveInput> = {}): SaveInput {
       excludeFailed: false,
       splitSitemaps: false,
       maxUrlsPerFile: 1000,
+      concurrency: 1,
+      retryCount: 0,
+      priorityStrategy: 'linkDepth',
+      readableUrls: false,
+      useFinalUrl: false,
+      exportHostOverride: '',
     },
     queue: ['https://example.com/b'],
     records: [record],
-    logs: [{ id: 1, ts: NOW, level: 'info', message: '开始' }],
+    logs: [{ id: 1, ts: NOW, level: 'info', key: 'log.task.start', params: { url: 'https://example.com/' } }],
     logSeq: 1,
     stats: { startedAt: NOW, finishedAt: null, requests: 1, consecutiveErrors: 0, skippedLinks: 0 },
     history: [],
@@ -103,7 +109,8 @@ describe('persistence / 斷點續爬', () => {
       id: index,
       ts: NOW,
       level: 'info' as const,
-      message: `log-${index}`,
+      key: 'log.task.start' as const,
+      params: { url: `https://example.com/${index}` },
     }))
 
     saveSnapshot(input({ records, queue, logs }))
@@ -111,5 +118,32 @@ describe('persistence / 斷點續爬', () => {
     expect(restored?.records.length).toBeLessThanOrEqual(5000)
     expect(restored?.queue.length).toBeLessThanOrEqual(5000)
     expect(restored?.logs.length).toBeLessThanOrEqual(500)
+  })
+
+  it('migrates pre-i18n log entries / 遷移 i18n 之前的日誌', () => {
+    // A snapshot written before log entries became structured: plain text, no key.
+    const legacy = {
+      version: 1,
+      savedAt: NOW,
+      task: { startUrl: 'https://example.com/', origin: 'https://example.com', pathPrefix: '' },
+      options: input().options,
+      queue: [],
+      records: [record],
+      logs: [
+        { id: 1, ts: NOW, level: 'info', message: '任务开始：https://example.com/' },
+        { id: 2, ts: NOW, level: 'error', message: '抓取失败' },
+        { id: 3, ts: NOW, level: 'info' }, // unusable → dropped
+      ],
+      logSeq: 3,
+      stats: input().stats,
+      history: [],
+    }
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(legacy))
+
+    const restored = loadSnapshot()
+    expect(restored?.logs).toHaveLength(2)
+    expect(restored?.logs[0].key).toBe('log.legacy')
+    expect(restored?.logs[0].params?.message).toBe('任务开始：https://example.com/')
+    expect(restored?.logs[1].level).toBe('error')
   })
 })

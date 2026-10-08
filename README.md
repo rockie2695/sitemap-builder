@@ -4,6 +4,8 @@ A full-stack sitemap generator built with **Next.js 16 App Router + TypeScript +
 
 Enter a start URL → the server renders each page in a headless browser and extracts its links → the client maintains a queue, deduplicates, and shows live progress and logs → export `sitemap.xml` (single or split), `CSV`, `JSON` and the crawl log.
 
+The UI ships in **English, Traditional Chinese and Simplified Chinese** (switchable, remembered), and the crawl itself supports retries, concurrency, three `priority` strategies and adjustable URL shaping for the exports.
+
 > 繁體中文文件：[README.zh-TW.md](./README.zh-TW.md)
 
 ---
@@ -12,6 +14,7 @@ Enter a start URL → the server renders each page in a headless browser and ext
 
 - [Quick Start](#quick-start)
 - [How the Crawl Works](#how-the-crawl-works)
+- [Options Reference](#options-reference)
 - [Feature Matrix](#feature-matrix)
 - [Crawl Rules](#crawl-rules)
 - [Optional Sitemap Fields](#optional-sitemap-fields)
@@ -23,6 +26,7 @@ Enter a start URL → the server renders each page in a headless browser and ext
 - [Resume After Refresh](#resume-after-refresh)
 - [Testing](#testing)
 - [Known Limitations](#known-limitations)
+- [License](#license)
 
 ---
 
@@ -99,6 +103,65 @@ failure — the links are not wasted. To support heavier sites, raise
 each request only creates a fresh `BrowserContext` (isolated cookies), so a crawl
 does not pay the 300–900ms launch cost per page.
 
+**Concurrency.** `concurrency` (1–5) runs several requests at once, but the start pace
+stays global: one request starts every `delayMs`, with at most N in flight. That keeps
+the load on the target predictable while slow pages overlap. Each worker uses its own
+browser context (~150 MB), so keep it small — and ≤2 on Vercel.
+
+**Retries.** `retryCount` (0–5) re-queues a page that failed at the *transport* level
+(a timeout, a dropped connection). A reachable 404 is **not** retried — it is a valid
+response and is simply recorded as failed. Retries do not consume the page budget,
+reuse the configured delay, and do not feed the consecutive-error auto-pause counter.
+
+**Redirects.** `page.goto` follows them (up to Chromium's limit), the final status and
+URL are recorded, and an in-scope final URL is registered as already-seen so the same
+page is not crawled twice. `useFinalUrl` switches the exports to the final address.
+
+---
+
+## Options Reference
+
+Everything the UI exposes, with defaults (`hooks/crawler/constants.ts` → `DEFAULT_OPTIONS`).
+All of them are stored in the task snapshot, so a resume keeps your settings.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| Keep query strings | off | Off strips the whole query; on keeps it minus tracking params |
+| Max pages | 1000 | Page budget. **Retries do not consume it** |
+| Delay | 800 ms | Delay between two request *starts* (global pace) |
+| Concurrency | 1 | Simultaneous in-flight requests (1 = sequential, max 5). Each worker is a browser context (~150 MB) |
+| Retries | 0 | Extra attempts for a *transport* failure (max 5). Retries reuse the delay and do not reset the auto-pause counter |
+| `lastmod` | on | Emit `<lastmod>` (page `Last-Modified`, else crawl time) |
+| `priority` + strategy | off | Emit `<priority>`; strategy = link depth / absolute path depth / relative path depth |
+| `changefreq` | off | Emit `<changefreq>`; literal value or "auto by depth" |
+| Exclude failed | off | Drop failed pages from every export |
+| Split files + per-file limit | off, 1000 | `sitemap-1..N.xml` + `sitemapindex.xml` past the limit |
+| Readable URLs | off | Decode non-ASCII path/query instead of percent-encoding (host stays punycode) |
+| Use final URL | off | Export the post-redirect address instead of the requested one |
+| Replace host | empty | Rewrite the host of every exported URL (path + query kept) |
+
+**Priority ladders**
+
+| Strategy | Rule |
+| --- | --- |
+| By link depth (default) | hops from the start page: 0→1.0, 1→0.8, 2→0.6, 3→0.4, ≥4→0.2 |
+| By path depth (absolute) | URL segments: `/` and `/a`→1.0, `/a/b`→0.8, `/a/b/c`→0.6, ≥5 segments→0.2 |
+| By path depth (relative) | segments below the start prefix: start page→1.0, `/test/a`→0.8, `/test/a/b`→0.6 |
+
+Path depth counts non-empty pathname segments as-is (a file extension counts, the query is ignored).
+
+**Export URL shaping** happens in one place (`lib/sitemap/url-display.ts`) and applies to
+`sitemap.xml`, `CSV` and `JSON` alike: pick the source URL (final or requested) → rewrite
+the host → decode if readable.
+
+**Redirects**: `page.goto` follows them, the final status and URL are recorded, and an
+in-scope final URL is registered as already-seen so the same page is not crawled twice.
+A link discovered *after* its redirect target was crawled can still cost one extra request.
+
+**Language**: the UI ships in English, Traditional Chinese and Simplified Chinese; the
+choice is remembered and otherwise detected from the browser. The crawl log, the log
+export and error messages are translated too.
+
 ---
 
 ## Feature Matrix
@@ -106,16 +169,16 @@ does not pay the 300–900ms launch cost per page.
 | Area | Capabilities |
 | --- | --- |
 | Input & control | Start-URL validation (http/https only), Start / Pause / Resume / Stop / Clear |
-| Crawl options | Keep-query-strings switch, page budget (default 1000), request delay (default 800ms) |
-| Statistics | Added to sitemap, pending, crawling, done, failed, skipped, success rate, throughput (pages/min), elapsed, average per page |
-| Current job | Current URL + live timer + stage stepper (queue → request → extract → done) |
-| Charts | Radial completion gauge + done/pending area chart over time (recharts) |
+| Crawl options | Keep-query-strings switch, page budget, request delay, **concurrency**, **retries** |
+| Statistics | Added to sitemap, pending, crawling, done, failed, skipped, success rate, throughput (pages/min), elapsed, average per page, **ETA** |
+| Current job | Current URL + live timer + stage stepper (queue → request → extract → done) + **N in flight** badge |
+| Charts | Radial completion gauge + done/pending area chart with a **recent / full-history** switch |
 | URL table | Status / URL / title / HTTP code / depth / links found / duration; search, status filter, copy, open in new tab; **virtual scrolling** |
-| Live logs | Timestamp + level (INFO/OK/WARN/ERROR), level filter, search, auto-follow, clear, export `crawl-log.txt` |
-| Exports | `sitemap.xml` (optional `lastmod`/`priority`/`changefreq`, split into files + `sitemapindex.xml`), `sitemap.csv` (with BOM), `sitemap.json`, log txt; "exclude failed" switch; ZIP bundling for splits |
-| Resilience | A failed page never stops the crawl; 5 consecutive failures auto-pause; the page budget auto-stops; Stop aborts in-flight requests immediately |
+| Live logs | Timestamp + level, level filter, search, auto-follow, clear, export; **translated into the active locale** |
+| Exports | `sitemap.xml` (optional `lastmod`/`priority`/`changefreq`, split + `sitemapindex.xml`), `sitemap.csv`, `sitemap.json`, log txt; exclude-failed, **readable URLs**, **use final URL**, **host override**, ZIP bundling |
+| Resilience | A failed page never stops the crawl; retries; 5 consecutive failures auto-pause; the page budget auto-stops; Stop aborts in-flight requests |
 | Resume | Task snapshot in localStorage; a refresh offers to continue |
-| UI/UX | Split / list / logs view tabs, light/dark theme, animated counters, skeleton loading, sticky export bar |
+| UI/UX | **Three locales (en / zh-Hant / zh-Hans)**, split/list/logs view tabs, light/dark theme, animated counters, skeleton loading, sticky export bar |
 
 ---
 
@@ -394,16 +457,19 @@ npm run e2e       # Playwright: real Chromium (builds first)
 | Toolchain smoke | `tests/toolchain.test.tsx` | Vitest + jsdom + `@/` alias + RTL wiring |
 | Unit | `tests/unit/url-utils.test.ts` | Parsing, normalization, scoping, tracking params |
 | Unit | `tests/unit/ssrf.test.ts` | Private hosts, IPv4/IPv6, env override |
-| Unit | `tests/unit/sitemap.test.ts` | priority / changefreq / lastmod / XML build / index / split |
-| Unit | `tests/unit/stats.test.ts` | Derived counters, throughput, formatting |
+| Unit | `tests/unit/sitemap.test.ts` | priority (3 strategies) / changefreq / lastmod / XML build / index / split |
+| Unit | `tests/unit/url-display.test.ts` | host override, readable decoding, final-URL selection |
+| Unit | `tests/unit/stats.test.ts` | Derived counters, throughput, **ETA**, formatting |
+| Unit | `tests/unit/charts.test.ts` | Y-axis width ladder and axis number formatting |
+| Unit | `tests/unit/i18n.test.ts` | Dictionary parity, interpolation, log formatting, locale detection |
 | Unit | `tests/unit/export.test.ts` | CSV (BOM, quoting), JSON, log text |
 | Unit | `tests/unit/zip.test.ts` | ZIP structure verified by inflating with `inflateRawSync` |
 | Unit | `tests/unit/persistence.test.ts` | Snapshot round-trip, caps, corruption |
 | State machine | `tests/unit/crawl-reducer.test.ts` | Full lifecycle, 404→failed, auto-pause, stop settling |
-| Engine | `tests/unit/crawl-engine.test.ts` | BFS order, dedup, slash alias, page budget, pause flag (fake HTTP + clock) |
+| Engine | `tests/unit/crawl-engine.test.ts` | BFS order, dedup, slash alias, page budget, pause flag, **retries, concurrency, redirect dedup** (fake HTTP + clock) |
 | API | `tests/api/crawl-route.test.ts` | zod 400s, SSRF 400, 200/206/502 mapping (mocked browser) |
-| Components | `tests/components/*.test.tsx` | ControlPanel, UrlList, LogPanel, ExportBar, ViewTabs |
-| E2E | `tests/e2e/crawl.spec.ts` | Real crawl, lastmod branches, pause/resume/stop |
+| Components | `tests/components/*.test.tsx` | ControlPanel, UrlList, LogPanel, ExportBar, ViewTabs (wrapped in `LocaleProvider`) |
+| E2E | `tests/e2e/crawl.spec.ts` | Real crawl, lastmod branches, priority strategy, retry, concurrency, pause/resume/stop, language switch, host override, readable URLs, chart period |
 
 Two things worth knowing about the test setup:
 
@@ -464,14 +530,19 @@ node --check chunk.js   # exit 0 = valid
 
 ## Known Limitations
 
+- The crawl scope is always the start URL's own `origin` + `pathPrefix`: **no cross-domain crawling**, so external links are dropped
 - `robots.txt` of the target site is not read
 - Existing `sitemap.xml` / sitemap index files are not parsed or imported
-- `lastmod` reflects the `Last-Modified` header or the crawl time — it cannot know
-  the content's real edit history; `priority` is a depth-based heuristic, not a
-  human weight
-- The start URL's own path is the crawl scope: `https://x.com/blog/post-1` crawls
-  only that subtree; to cover `/blog`, enter the directory URL
+- `lastmod` reflects the `Last-Modified` header or the crawl time — it cannot know the content's real edit history; `priority` is a depth-based heuristic, not a human weight
+- The start URL's own path is the crawl scope: `https://x.com/blog/post-1` crawls only that subtree; to cover `/blog`, enter the directory URL
+- Readable URLs decode the path/query only — the **host stays punycode** (`xn--…`), because browsers expose no IDN decoder
+- The trend chart keeps one sample per second up to 1 hour; a longer crawl drops the oldest samples
 - Authenticated pages (cookies / Basic Auth / logins) are not supported
 - Resume-after-refresh is bounded by the localStorage quota; split very large tasks
-- TypeScript is pinned to **5.9**: the native `typescript@7` compiler is not yet
-  supported by typescript-eslint and breaks `npm run lint`
+- TypeScript is pinned to **5.9**: the native `typescript@7` compiler is not yet supported by typescript-eslint and breaks `npm run lint`
+
+---
+
+## License
+
+[MIT](./LICENSE) © 2026 rocki

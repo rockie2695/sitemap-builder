@@ -16,8 +16,14 @@ export const MAX_CONSECUTIVE_ERRORS = 5
 /** Ring-buffer cap for the in-memory log panel. */
 export const LOG_LIMIT = 5_000
 
-/** Cap for throughput chart samples (~4 minutes at 1 sample/second). */
-export const HISTORY_LIMIT = 240
+/** Cap for throughput chart samples (1 hour at one sample per second). */
+export const HISTORY_LIMIT = 3_600
+
+/** Highest accepted concurrency (each worker is a browser context ≈150MB). */
+export const MAX_CONCURRENCY = 5
+
+/** Highest accepted retry count per page. */
+export const MAX_RETRIES = 5
 
 /** How often the engine samples throughput / refreshes the elapsed timer. */
 export const SAMPLE_INTERVAL_MS = 1_000
@@ -34,12 +40,18 @@ export const DEFAULT_OPTIONS: CrawlOptions = {
   stripQuery: true,
   /** Hard cap on crawled pages; reaching it stops the task. */
   maxPages: 1000,
-  /** Politeness delay between two requests, in milliseconds. */
+  /** Politeness delay between two request starts, in milliseconds. */
   delayMs: 800,
+  /** Sequential by default: one request at a time. */
+  concurrency: 1,
+  /** No retries by default. */
+  retryCount: 0,
   /** Emit <lastmod> in sitemap.xml (from Last-Modified header, else crawl time). */
   includeLastmod: true,
   /** Emit <priority> in sitemap.xml (derived from link depth). */
   includePriority: false,
+  /** Link depth is the most intuitive default ladder. */
+  priorityStrategy: 'linkDepth',
   /** Emit <changefreq> in sitemap.xml. */
   includeChangefreq: false,
   /** "auto" derives changefreq from depth; otherwise the literal value is used. */
@@ -50,4 +62,10 @@ export const DEFAULT_OPTIONS: CrawlOptions = {
   splitSitemaps: false,
   /** URLs per generated sitemap file. */
   maxUrlsPerFile: 1000,
+  /** Percent-encoded URLs by default (what search engines expect). */
+  readableUrls: false,
+  /** Export the requested URL by default. */
+  useFinalUrl: false,
+  /** No host rewriting by default. */
+  exportHostOverride: '',
 }

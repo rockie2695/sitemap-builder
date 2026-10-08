@@ -17,7 +17,7 @@ import {
   toSitemapEntries,
   type SitemapExportOptions,
 } from '@/lib/sitemap/entries'
-import { priorityForDepth } from '@/lib/sitemap/priority'
+import { priorityForDepth, pathDepthOf, relativePathDepthOf, resolvePriority } from '@/lib/sitemap/priority'
 import { splitSitemaps, toDownloadPayloads } from '@/lib/sitemap/split'
 import type { UrlRecord } from '@/types/crawl'
 
@@ -48,21 +48,104 @@ function record(url: string, depth: number, extra: Partial<UrlRecord> = {}): Url
 const ALL_OFF: SitemapExportOptions = {
   includeLastmod: false,
   includePriority: false,
+  priorityStrategy: 'linkDepth',
   includeChangefreq: false,
   changefreq: 'auto',
+  readableUrls: false,
+  useFinalUrl: false,
+  hostOverride: '',
+  pathPrefix: '',
 }
 const ALL_ON: SitemapExportOptions = {
   includeLastmod: true,
   includePriority: true,
+  priorityStrategy: 'linkDepth',
   includeChangefreq: true,
   changefreq: 'auto',
+  readableUrls: false,
+  useFinalUrl: false,
+  hostOverride: '',
+  pathPrefix: '',
 }
 const MANUAL: SitemapExportOptions = {
   includeLastmod: true,
   includePriority: true,
+  priorityStrategy: 'linkDepth',
   includeChangefreq: true,
   changefreq: 'weekly',
+  readableUrls: false,
+  useFinalUrl: false,
+  hostOverride: '',
+  pathPrefix: '',
 }
+
+describe('path depth / 路徑深度', () => {
+  it('counts non-empty path segments as-is / 原樣計算非空路徑段數', () => {
+    expect(pathDepthOf('https://example.com/')).toBe(0)
+    expect(pathDepthOf('https://example.com/a')).toBe(1)
+    expect(pathDepthOf('https://example.com/a/b')).toBe(2)
+    expect(pathDepthOf('https://example.com/a/b/c')).toBe(3)
+  })
+
+  it('ignores the query and a trailing slash / 忽略查詢與末尾斜線', () => {
+    expect(pathDepthOf('https://example.com/a/b/')).toBe(2)
+    expect(pathDepthOf('https://example.com/a/b?x=1')).toBe(2)
+  })
+
+  it('keeps the file extension counted as-is / 檔名含擴展名時原樣計數', () => {
+    expect(pathDepthOf('https://example.com/blog/post-1.html')).toBe(2)
+  })
+
+  it('returns 0 for unparseable URLs / 無法解析時回傳 0', () => {
+    expect(pathDepthOf('::::')).toBe(0)
+  })
+
+  it('computes depth relative to the prefix / 相對前綴計算深度', () => {
+    expect(relativePathDepthOf('https://example.com/test/', '/test')).toBe(0)
+    expect(relativePathDepthOf('https://example.com/test/a', '/test')).toBe(1)
+    expect(relativePathDepthOf('https://example.com/test/a/b', '/test')).toBe(2)
+  })
+
+  it('falls back to the absolute depth outside the prefix / 不在前綴下時回退絕對深度', () => {
+    expect(relativePathDepthOf('https://example.com/other/a', '/test')).toBe(2)
+  })
+
+  it('treats an empty prefix as the root / 空前綴視為根', () => {
+    expect(relativePathDepthOf('https://example.com/a/b', '')).toBe(2)
+  })
+})
+
+describe('resolvePriority / 三種優先級策略', () => {
+  it('linkDepth follows the hop count / 按連結深度', () => {
+    const context = { strategy: 'linkDepth' as const, pathPrefix: '/test' }
+    expect(resolvePriority(record('https://example.com/test/a/b', 0), context)).toBe(1)
+    expect(resolvePriority(record('https://example.com/test/a/b', 2), context)).toBe(0.6)
+  })
+
+  it('pathDepth follows the URL segments / 按絕對路徑深度', () => {
+    const context = { strategy: 'pathDepth' as const, pathPrefix: '/test' }
+    // `/` and `/a` both sit at the top level.
+    expect(resolvePriority(record('https://example.com/', 5), context)).toBe(1)
+    expect(resolvePriority(record('https://example.com/a', 5), context)).toBe(1)
+    expect(resolvePriority(record('https://example.com/a/b', 5), context)).toBe(0.8)
+    expect(resolvePriority(record('https://example.com/a/b/c', 5), context)).toBe(0.6)
+  })
+
+  it('relativePathDepth measures below the start prefix / 按相對前綴的路徑深度', () => {
+    const context = { strategy: 'relativePathDepth' as const, pathPrefix: '/test' }
+    expect(resolvePriority(record('https://example.com/test/', 0), context)).toBe(1)
+    expect(resolvePriority(record('https://example.com/test/a', 0), context)).toBe(0.8)
+    expect(resolvePriority(record('https://example.com/test/a/b', 0), context)).toBe(0.6)
+  })
+
+  it('is honuored by toSitemapEntries / 由 toSitemapEntries 採用', () => {
+    const entries = toSitemapEntries(
+      [record('https://example.com/a/b/c', 0)],
+      { ...ALL_ON, priorityStrategy: 'pathDepth' as const, pathPrefix: '/test' },
+    )
+    expect(entries[0].priority).toBe(0.6)
+  })
+})
 
 describe('priorityForDepth / 深度分層', () => {
   it('maps depth 0-3 to the ladder / 前 4 層對應階梯', () => {

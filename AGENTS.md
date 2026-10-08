@@ -43,8 +43,10 @@ npm run dev         # dev server; only ONE dev instance per project is allowed (
 | `hooks/crawler/index.ts` | `useCrawler()` composition; the only import the UI needs |
 | `lib/crawler/crawlPage.ts` | Server-side page fetch; injectable browser for tests |
 | `lib/crawler/schema.ts` | zod schemas — single source of truth for the wire format |
-| `lib/sitemap/*` | Entry building, XML serialisation, splitting |
+| `lib/sitemap/*` | Entry building, priority/URL strategies, XML serialisation, splitting |
 | `lib/export/*` | CSV/JSON/log/ZIP + browser downloads |
+| `lib/i18n/*` | Three-locale dictionaries (type-checked) + runtime |
+| `components/providers/LocaleProvider.tsx` | Locale state `useI18n()` — wrap anything using UI copy |
 | `components/dashboard/*` | All UI; `SitemapBuilder.tsx` is the shell |
 
 ## Invariants — do not break these / 不變量——請勿破壞
@@ -52,8 +54,10 @@ npm run dev         # dev server; only ONE dev instance per project is allowed (
 1. **The queue lives in the engine, not in the reducer.** Discovery happens in the
    loop (`registerUrl`) BEFORE the `page/result` dispatch; the reducer only builds
    the view model. 佇列屬於引擎：發現（`registerUrl`）在 dispatch 之前完成。
-2. **`crawlReducer` must stay pure.** No `Date.now()`, no refs, no side effects.
-   Keep it unit-testable. 狀態機必須保持純函式。
+2. **`crawlReducer` must stay pure.** No `Date.now()`, no refs, no side effects, and
+   **no formatted user-facing text** — logs are emitted as `{ key, params }` i18n
+   keys. Keep it unit-testable.
+   狀態機必須保持純函式，且不得輸出已格式化的文字：日誌一律以 i18n 鍵＋參數輸出。
 3. **A reachable 4xx/5xx page is `failed`, not `done`** — it must never enter the
    sitemap, but its links are still collected. 可達的 4xx/5xx 記為失敗，但連結仍要收集。
 4. **The start URL is opened as typed** (trailing slash preserved) and its
@@ -71,6 +75,32 @@ npm run dev         # dev server; only ONE dev instance per project is allowed (
    `shadcn/tailwind.css`, which only the modern CLI package ships; `shadcn@1.0.0` on
    npm is an empty placeholder and breaks the dev compile.
    `shadcn` 必須維持 4.x，否則 `shadcn/tailwind.css` 無法解析。
+10. **New crawl options go into `DEFAULT_OPTIONS`** (`hooks/crawler/constants.ts`).
+    Restored snapshots merge over those defaults, so a missing default surfaces as a
+    controlled-input warning. 新選項必須加入 `DEFAULT_OPTIONS`。
+11. **All export paths share one resolver per concern**: priority via
+    `resolvePriority`, URLs via `displayUrl`, changefreq via `resolveChangefreq`.
+    Never compute these inline in a component or a single exporter.
+    匯出各項計算必須共用同一個解析函式，禁止在元件或單一匯出器內各自實作。
+12. **UI copy comes from `useI18n()`** and every new key must be added to all three
+    dictionaries (`lib/i18n/{en,zh-TW,zh-CN}.ts`) — the `Record<UiKey, string>` type
+    makes a missing translation a compile error. 所有文案走 `useI18n()`，新鍵必須三語齊備。
+
+## Option behaviour notes / 選項行為備註
+
+- **Retries** (`retryCount`) only apply to *transport* failures, do not consume
+  `maxPages`, reuse `delayMs`, and do not reset the consecutive-error auto-pause
+  counter. 重試只針對傳輸失敗，不佔頁數上限，也不重置自動暫停計數。
+- **Concurrency** (`concurrency`) keeps a global start pace of one request per
+  `delayMs`, at most N in flight; the queue check precedes the page-budget check so a
+  site with exactly `maxPages` pages reports "finished", not "limit reached".
+  並發仍維持每 `delayMs` 啟動一個請求的全域節奏；先檢查佇列是否為空，再檢查頁數上限。
+- **Redirects**: `goto` follows them, `finalUrl` is stored, and the in-scope final
+  URL is registered as seen so it is not crawled twice. `useFinalUrl` switches the
+  export to the final address. 重定向會被跟隨，最終位址會登記為已見；`useFinalUrl`
+  控制匯出使用最終位址。
+- **No cross-domain crawling**: the scope is always the start URL's `origin` plus
+  `pathPrefix`. 不做跨域抓取。
 
 ## Known environment pitfalls / 已知環境陷阱
 

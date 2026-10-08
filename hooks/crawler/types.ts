@@ -7,6 +7,7 @@
  * 抓取狀態機的內部狀態與 action 型別。獨立成檔讓 `reducer.ts` 保持易讀，
  * 也讓測試可以直接驅動狀態機而不用渲染 React。
  */
+import type { LogMessageKey, MessageParams } from '@/lib/i18n/types'
 import type {
   CrawlOptions,
   CrawlResponsePayload,
@@ -21,8 +22,17 @@ import type {
 /** A log entry before it gets an id and a timestamp. */
 export interface LogDraft {
   level: LogEntry['level']
-  message: string
+  /** i18n key; the UI translates it for the active locale. */
+  key: LogMessageKey
+  /** Values for the `{placeholders}` in the key's template. */
+  params?: MessageParams
   url?: string
+}
+
+/** Structured reason attached to a stop action. */
+export interface StopReason {
+  key: LogMessageKey
+  params?: MessageParams
 }
 
 /** Everything the UI renders. Ticks once per second while running. */
@@ -79,7 +89,7 @@ export type CrawlAction =
   /** Enter the paused phase (manual or triggered by repeated failures). */
   | { type: 'task/pause'; now: number }
   /** Abort the task; the queue is dropped by the engine. */
-  | { type: 'task/stop'; reason?: string; now: number }
+  | { type: 'task/stop'; reason?: StopReason; now: number }
   /** Queue drained: the crawl finished successfully. */
   | { type: 'task/finish'; now: number }
   /** Wipe everything back to a blank slate. */
@@ -88,6 +98,15 @@ export type CrawlAction =
   | { type: 'options/set'; options: Partial<CrawlOptions> }
   /** A URL left the queue and its request is about to be issued. */
   | { type: 'page/start'; url: string; pendingCount: number; now: number }
+  /** A failed page is being retried: back to `queued` with one more attempt spent. */
+  | {
+      type: 'page/requeue'
+      url: string
+      attempt: number
+      max: number
+      pendingCount: number
+      now: number
+    }
   /** A request finished (successfully or not). */
   | {
       type: 'page/result'

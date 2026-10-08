@@ -7,19 +7,20 @@
  *
  * 輸入列、任務控制與抓取選項。
  * 這裡的按鈕都位於 `<form>` 內（讓 Enter 可直接送出網址），
- * 因此非送出按鈕「必須」宣告 `type="button"`，
- * 否則會提交表單並悄悄重新啟動整個任務。
+ * 因此非送出按鈕「必須」宣告 `type="button"`，否則會提交表單並悄悄重啟整個任務。
  */
 'use client'
 
 import type { FormEvent } from 'react'
 import { Pause, Play, Square, Trash2 } from 'lucide-react'
 
+import { useI18n } from '@/components/providers/LocaleProvider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { MAX_CONCURRENCY, MAX_RETRIES } from '@/hooks/crawler/constants'
 import { cn } from '@/lib/utils'
 import type { CrawlOptions, Phase } from '@/types/crawl'
 
@@ -55,15 +56,6 @@ const PHASE_PILL: Record<Phase, string> = {
   done: 'bg-sky-500/20 text-sky-700 dark:text-sky-300',
 }
 
-/** Phase label. */
-const PHASE_LABEL: Record<Phase, string> = {
-  idle: '待命',
-  running: '运行中',
-  paused: '已暂停',
-  stopped: '已停止',
-  done: '已完成',
-}
-
 /** Start-URL field plus start / pause / stop / clear and the crawl options. */
 export function ControlPanel({
   inputUrl,
@@ -77,6 +69,7 @@ export function ControlPanel({
   options,
   onOptionsChange,
 }: ControlPanelProps) {
+  const { t } = useI18n()
   const running = phase === 'running'
   const paused = phase === 'paused'
 
@@ -85,13 +78,17 @@ export function ControlPanel({
     onStart()
   }
 
+  /** Clamp a numeric option into an inclusive range, defaulting on garbage input. */
+  const clampNumber = (raw: string, min: number, max: number, fallback: number): number =>
+    Math.max(min, Math.min(max, Number(raw) || fallback))
+
   return (
     <Card>
       <CardContent className="space-y-4">
         <form onSubmit={submit} className="flex flex-col gap-3 lg:flex-row lg:items-center">
           <div className="flex-1">
             <Label htmlFor="start-url" className="mb-1.5 block text-xs text-muted-foreground">
-              起始 URL
+              {t('control.startUrl')}
             </Label>
             <Input
               id="start-url"
@@ -109,13 +106,13 @@ export function ControlPanel({
           <div className="flex flex-wrap items-center gap-2 lg:pt-[22px]">
             <Button type="submit" disabled={running || paused} className="min-w-24">
               <Play className="size-4" />
-              开始抓取
+              {t('control.start')}
             </Button>
 
             {running ? (
               <Button type="button" variant="outline" onClick={onPause} className="min-w-24">
                 <Pause className="size-4" />
-                暂停
+                {t('control.pause')}
               </Button>
             ) : (
               <Button
@@ -126,7 +123,7 @@ export function ControlPanel({
                 className="min-w-24"
               >
                 <Play className="size-4" />
-                继续
+                {t('control.resume')}
               </Button>
             )}
 
@@ -138,12 +135,12 @@ export function ControlPanel({
               className="min-w-24"
             >
               <Square className="size-4" />
-              停止
+              {t('control.stop')}
             </Button>
 
-            <Button type="button" variant="ghost" onClick={onReset} title="清空全部结果">
+            <Button type="button" variant="ghost" onClick={onReset} title={t('control.clearTitle')}>
               <Trash2 className="size-4" />
-              清空
+              {t('control.clear')}
             </Button>
           </div>
         </form>
@@ -156,10 +153,8 @@ export function ControlPanel({
               PHASE_PILL[phase],
             )}
           >
-            <span
-              className={cn('size-1.5 rounded-full bg-current', running && 'animate-pulse')}
-            />
-            {PHASE_LABEL[phase]}
+            <span className={cn('size-1.5 rounded-full bg-current', running && 'animate-pulse')} />
+            {t(`phase.${phase}`)}
           </span>
 
           <label className="flex items-center gap-2">
@@ -168,15 +163,15 @@ export function ControlPanel({
               onCheckedChange={(checked) => onOptionsChange({ stripQuery: !checked })}
             />
             <span className="text-muted-foreground">
-              保留查询参数
+              {t('control.keepQuery')}
               <span className="ml-1 text-[11px] text-muted-foreground/80">
-                {options.stripQuery ? '当前：已移除 ?xxx=yyy' : '当前：保留（仍剔除 utm_* 等追踪参数）'}
+                {options.stripQuery ? t('control.query.stripped') : t('control.query.kept')}
               </span>
             </span>
           </label>
 
           <label className="flex items-center gap-2">
-            <span className="text-muted-foreground">最大页数</span>
+            <span className="text-muted-foreground">{t('control.maxPages')}</span>
             <Input
               name="maxPages"
               type="number"
@@ -184,14 +179,14 @@ export function ControlPanel({
               max={100_000}
               value={options.maxPages}
               onChange={(event) =>
-                onOptionsChange({ maxPages: Math.max(1, Number(event.target.value) || 1) })
+                onOptionsChange({ maxPages: clampNumber(event.target.value, 1, 100_000, 1) })
               }
               className="h-8 w-24 text-xs tabular-nums"
             />
           </label>
 
           <label className="flex items-center gap-2">
-            <span className="text-muted-foreground">请求间隔</span>
+            <span className="text-muted-foreground">{t('control.delay')}</span>
             <Input
               name="delayMs"
               type="number"
@@ -200,11 +195,46 @@ export function ControlPanel({
               step={100}
               value={options.delayMs}
               onChange={(event) =>
-                onOptionsChange({ delayMs: Math.max(0, Number(event.target.value) || 0) })
+                onOptionsChange({ delayMs: clampNumber(event.target.value, 0, 60_000, 0) })
               }
               className="h-8 w-24 text-xs tabular-nums"
             />
-            <span className="text-muted-foreground">ms</span>
+            <span className="text-muted-foreground">{t('control.delayUnit')}</span>
+          </label>
+
+          <label className="flex items-center gap-2" title={t('control.concurrencyTitle')}>
+            <span className="text-muted-foreground">{t('control.concurrency')}</span>
+            <Input
+              name="concurrency"
+              type="number"
+              min={1}
+              max={MAX_CONCURRENCY}
+              value={options.concurrency}
+              onChange={(event) =>
+                onOptionsChange({
+                  concurrency: clampNumber(event.target.value, 1, MAX_CONCURRENCY, 1),
+                })
+              }
+              className="h-8 w-16 text-xs tabular-nums"
+            />
+          </label>
+
+          <label className="flex items-center gap-2" title={t('control.retryTitle')}>
+            <span className="text-muted-foreground">{t('control.retryCount')}</span>
+            <Input
+              name="retryCount"
+              type="number"
+              min={0}
+              max={MAX_RETRIES}
+              value={options.retryCount}
+              onChange={(event) =>
+                onOptionsChange({
+                  retryCount: clampNumber(event.target.value, 0, MAX_RETRIES, 0),
+                })
+              }
+              className="h-8 w-16 text-xs tabular-nums"
+            />
+            <span className="text-muted-foreground">{t('control.times')}</span>
           </label>
         </div>
       </CardContent>

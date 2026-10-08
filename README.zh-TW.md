@@ -4,6 +4,8 @@
 
 輸入起始網址 → 伺服器以無頭瀏覽器逐頁渲染並擷取連結 → 前端維護佇列、去重、即時顯示進度與日誌 → 匯出 `sitemap.xml`（單檔或拆分）、`CSV`、`JSON` 與抓取日誌。
 
+介面提供**英文、繁體中文與簡體中文**（可切換並記住），抓取支援重試、並發、三種 `priority` 策略，匯出端的 URL 呈現也可調整。
+
 > English documentation: [README.md](./README.md)
 
 ---
@@ -12,6 +14,7 @@
 
 - [快速開始](#快速開始)
 - [抓取流程說明](#抓取流程說明)
+- [選項參考](#選項參考)
 - [功能清單](#功能清單)
 - [抓取規則](#抓取規則)
 - [sitemap 的選用欄位](#sitemap-的選用欄位)
@@ -23,6 +26,7 @@
 - [斷點續爬](#斷點續爬)
 - [測試](#測試)
 - [已知限制](#已知限制)
+- [授權](#授權)
 
 ---
 
@@ -91,6 +95,59 @@ ALLOW_PRIVATE_TARGETS=1 npm run dev
 
 **瀏覽器會被複用。** chromium「程序」是 `globalThis` 單例，
 每個請求只新建 `BrowserContext`（隔離 cookie），因此抓取不必每頁支付 300~900ms 的啟動成本。
+
+**並發。** `concurrency`（1～5）可同時發出多個請求，但啟動節奏仍是全域的：
+每 `delayMs` 啟動一個請求、同時最多 N 個在途。這讓目標站的負載可預期，慢頁面也能重疊處理。
+每個工作使用獨立的瀏覽器 context（約 150MB），建議數值保守，Vercel 上不超過 2。
+
+**重試。** `retryCount`（0～5）會重新排入「傳輸層失敗」的頁面（逾時、連線中斷）。
+能開啟的 404 **不會**重試——那是有效回應，只會被記為失敗。重試不佔頁數預算、
+沿用設定的間隔，也不計入「連續失敗自動暫停」的計數。
+
+**重定向。** `page.goto` 會跟隨跳轉（受 Chromium 上限約束），最終狀態碼與位址會被記錄，
+範圍內的最終位址會登記為已見，避免同一頁被抓兩次。`useFinalUrl` 讓匯出改用最終位址。
+
+---
+
+## 選項參考
+
+介面暴露的全部選項與預設值（來源：`hooks/crawler/constants.ts` → `DEFAULT_OPTIONS`）。
+所有選項都會存進任務快照，續爬時設定不會遺失。
+
+| 選項 | 預設 | 作用 |
+| --- | --- | --- |
+| 保留查詢參數 | 關 | 關閉時丟棄整個 query；開啟時保留但剔除追蹤參數 |
+| 最大頁數 | 1000 | 頁數預算。**重試不佔用** |
+| 請求間隔 | 800 ms | 兩次請求「啟動」之間的間隔（全域節奏） |
+| 並發數 | 1 | 同時在途請求數（1 = 循序，上限 5）。每個工作使用獨立瀏覽器 context（約 150MB） |
+| 失敗重試 | 0 | 針對「傳輸失敗」的額外嘗試次數（上限 5）。重試沿用請求間隔，也不重置自動暫停計數 |
+| `lastmod` | 開 | 輸出 `<lastmod>`（頁面 Last-Modified，缺失時用抓取時間） |
+| `priority` + 策略 | 關 | 輸出 `<priority>`；策略可選連結深度／絕對路徑深度／相對路徑深度 |
+| `changefreq` | 關 | 輸出 `<changefreq>`；可選固定值或「按深度自動」 |
+| 排除失敗頁面 | 關 | 從所有匯出格式中排除失敗頁面 |
+| 拆分為多個文件 + 每檔上限 | 關、1000 | 超限時產生 `sitemap-1..N.xml` 與 `sitemapindex.xml` |
+| URL 顯示為可讀文字 | 關 | 解碼非 ASCII 的路徑／查詢（主機維持 punycode） |
+| 使用跳轉後的最終位址 | 關 | 匯出重定向後的最終位址 |
+| 替換主機名 | 空 | 替換所有匯出 URL 的主機名（路徑與查詢保留） |
+
+**優先級階梯**
+
+| 策略 | 規則 |
+| --- | --- |
+| 按連結深度（預設） | 距起始頁的連結層數：0→1.0、1→0.8、2→0.6、3→0.4、≥4→0.2 |
+| 按路徑深度（絕對） | URL 段數：`/` 與 `/a`→1.0、`/a/b`→0.8、`/a/b/c`→0.6、≥5 段→0.2 |
+| 按路徑深度（相對） | 起始前綴以下的段數：起始頁→1.0、`/test/a`→0.8、`/test/a/b`→0.6 |
+
+路徑深度以非空的路徑段原樣計算（檔名含擴展名照算，查詢字串忽略）。
+
+**匯出 URL 的呈現**集中在 `lib/sitemap/url-display.ts`，`sitemap.xml`、`CSV`、`JSON` 一致：
+選出來源 URL（最終或原始）→ 替換主機 → 需要時解碼。
+
+**重定向**：`page.goto` 會跟隨跳轉，最終狀態碼與位址會被記錄，且在範圍內的最終位址會登記為已見，
+避免同一頁被抓兩次。若某個連結是在其重定向目標已被抓取「之後」才被發現，仍會多花一次請求。
+
+**語言**：介面有英文、繁體中文、簡體中文；選擇會被記住，否則依瀏覽器語言自動判斷。
+抓取日誌、日誌匯出與錯誤訊息同樣會翻譯。
 
 ---
 
@@ -378,16 +435,19 @@ npm run e2e       # Playwright：真實 Chromium（會先建置）
 | 工具鏈煙霧 | `tests/toolchain.test.tsx` | Vitest + jsdom + `@/` 別名 + RTL 接線 |
 | 單元 | `tests/unit/url-utils.test.ts` | 解析、規範化、範圍、追蹤參數 |
 | 單元 | `tests/unit/ssrf.test.ts` | 私有主機、IPv4/IPv6、環境變數開關 |
-| 單元 | `tests/unit/sitemap.test.ts` | priority／changefreq／lastmod／XML 建構／索引／拆分 |
-| 單元 | `tests/unit/stats.test.ts` | 衍生統計、吞吐量、格式化 |
+| 單元 | `tests/unit/sitemap.test.ts` | priority（三策略）／changefreq／lastmod／XML 建構／索引／拆分 |
+| 單元 | `tests/unit/url-display.test.ts` | 主機替換、可讀解碼、最終位址選擇 |
+| 單元 | `tests/unit/stats.test.ts` | 衍生統計、吞吐量、**預計剩餘**、格式化 |
+| 單元 | `tests/unit/charts.test.ts` | Y 軸寬度階梯與軸標籤格式 |
+| 單元 | `tests/unit/i18n.test.ts` | 字典對齊、插值、日誌格式化、語系偵測 |
 | 單元 | `tests/unit/export.test.ts` | CSV（BOM、引號跳脫）、JSON、日誌文字 |
 | 單元 | `tests/unit/zip.test.ts` | ZIP 結構以 `inflateRawSync` 解壓驗證 |
 | 單元 | `tests/unit/persistence.test.ts` | 快照往返、上限、損壞 |
 | 狀態機 | `tests/unit/crawl-reducer.test.ts` | 完整生命週期、404→失敗、自動暫停、停止收尾 |
-| 引擎 | `tests/unit/crawl-engine.test.ts` | 廣度優先順序、去重、斜線別名、頁數上限、暫停旗標（假 HTTP + 時鐘） |
+| 引擎 | `tests/unit/crawl-engine.test.ts` | 廣度優先順序、去重、斜線別名、頁數上限、暫停旗標、**重試、並發、重定向去重**（假 HTTP + 時鐘） |
 | API | `tests/api/crawl-route.test.ts` | zod 400、SSRF 400、200/206/502 映射（mock 瀏覽器） |
-| 元件 | `tests/components/*.test.tsx` | ControlPanel、UrlList、LogPanel、ExportBar、ViewTabs |
-| E2E | `tests/e2e/crawl.spec.ts` | 真實抓取、lastmod 兩種分支、暫停／繼續／停止 |
+| 元件 | `tests/components/*.test.tsx` | ControlPanel、UrlList、LogPanel、ExportBar、ViewTabs（包在 `LocaleProvider` 內） |
+| E2E | `tests/e2e/crawl.spec.ts` | 真實抓取、lastmod 兩種分支、priority 策略、重試、並發、暫停／繼續／停止、語系切換、主機替換、可讀 URL、圖表時段 |
 
 測試設定有兩件事值得知道：
 
@@ -444,13 +504,22 @@ node --check chunk.js   # 退出碼 0 = 語法正確
 
 ## 已知限制
 
+- 抓取範圍永遠是起始網址自身的 `origin` + `pathPrefix`：**不做跨域抓取**，外站連結會被丟棄
 - 不會讀取目標站点的 `robots.txt`
 - 不解析、不匯入現有的 `sitemap.xml`／sitemap index
 - `lastmod` 只能反映 `Last-Modified` 標頭或抓取時間——拿不到內容的真實修改歷史；
-  `priority` 是深度推導的啟發值，不是人工權重
+  `priority` 是依深度推導的啟發值，不是人工權重
 - 起始網址自身的路徑就是抓取範圍：`https://x.com/blog/post-1` 只抓該子樹；
   要涵蓋 `/blog` 請輸入目錄位址
+- 可讀 URL 只解碼路徑與查詢，**主機仍維持 punycode**（`xn--…`），因為瀏覽器沒有 IDN 解碼 API
+- 趨勢圖每秒取樣、最多保留 1 小時；更久的任務會丟棄最舊的取樣點
 - 不支援需要登入的頁面（cookie／Basic Auth／登入狀態）
 - 斷點續爬受 localStorage 配額限制；超大任務請分批
 - TypeScript 釘在 **5.9**：原生 `typescript@7` 編譯器尚未被 typescript-eslint 支援，
   會導致 `npm run lint` 失敗
+
+---
+
+## 授權
+
+[MIT](./LICENSE) © 2026 rocki

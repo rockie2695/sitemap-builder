@@ -1,17 +1,18 @@
 /**
- * "Current job" card: which page is being fetched, the pipeline stage and the
- * overall stacked progress bar.
+ * "Current job" card: which page is being fetched, the pipeline stage, the ETA and
+ * the overall stacked progress bar.
  *
- * 「当前抓取」卡片：正在处理的页面、阶段进度与整体堆叠进度条。
+ * 「當前抓取」卡片：正在處理的頁面、階段進度、預計剩餘時間與整體堆疊進度條。
  */
 'use client'
 
 import { CircleCheck, Loader2, PauseCircle, Radio, Timer } from 'lucide-react'
 
 import { ProgressBar } from '@/components/dashboard/ProgressBar'
+import { useI18n } from '@/components/providers/LocaleProvider'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import type { DerivedStats } from '@/lib/stats'
+import { formatDuration, type DerivedStats } from '@/lib/stats'
 import { cn } from '@/lib/utils'
 import type { CrawlTaskMeta, Phase } from '@/types/crawl'
 
@@ -30,13 +31,8 @@ interface CurrentJobCardProps {
   stats: DerivedStats
 }
 
-/** Pipeline stages, in order. */
-const STEPS = [
-  { key: 'queue', label: '排队' },
-  { key: 'request', label: '请求页面' },
-  { key: 'extract', label: '提取链接' },
-  { key: 'done', label: '完成' },
-] as const
+/** Pipeline stages, in order (labels are i18n keys). */
+const STEPS = ['job.stage.queue', 'job.stage.request', 'job.stage.extract', 'job.stage.done'] as const
 
 /**
  * Infer the stage from the request lifecycle.
@@ -51,7 +47,7 @@ function resolveStep(phase: Phase, currentUrl: string | null, stats: DerivedStat
   return 1
 }
 
-/** Current-job card with the stage stepper and progress bar. */
+/** Current-job card with the stage stepper, ETA and progress bar. */
 export function CurrentJobCard({
   task,
   phase,
@@ -60,6 +56,7 @@ export function CurrentJobCard({
   now,
   stats,
 }: CurrentJobCardProps) {
+  const { t } = useI18n()
   const handled = stats.processed + stats.pending + stats.crawling
   const currentElapsed = currentStartedAt === null ? 0 : Math.max(0, now - currentStartedAt)
   const activeStep = resolveStep(phase, currentUrl, stats)
@@ -73,7 +70,7 @@ export function CurrentJobCard({
           ) : (
             <PauseCircle className="size-4 text-muted-foreground" />
           )}
-          当前抓取
+          {t('job.title')}
         </CardTitle>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -81,8 +78,13 @@ export function CurrentJobCard({
             origin={task?.origin ?? '—'}
           </Badge>
           <Badge variant="outline" className="font-mono text-[11px]">
-            前缀={task ? task.pathPrefix || '/' : '—'}
+            prefix={task ? task.pathPrefix || '/' : '—'}
           </Badge>
+          {stats.crawling > 1 ? (
+            <Badge variant="secondary" className="text-[11px]">
+              {t('job.concurrency', { count: stats.crawling })}
+            </Badge>
+          ) : null}
         </div>
       </CardHeader>
 
@@ -96,11 +98,8 @@ export function CurrentJobCard({
                 phase === 'running' && currentUrl && 'animate-spin',
               )}
             />
-            <p
-              className="min-w-0 flex-1 truncate font-mono text-sm"
-              title={currentUrl ?? undefined}
-            >
-              {currentUrl ?? (phase === 'idle' ? '等待输入起始 URL' : '空闲中（队列已处理完毕）')}
+            <p className="min-w-0 flex-1 truncate font-mono text-sm" title={currentUrl ?? undefined}>
+              {currentUrl ?? (phase === 'idle' ? t('job.waitingInput') : t('job.idle'))}
             </p>
             {currentUrl ? (
               <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
@@ -115,7 +114,7 @@ export function CurrentJobCard({
             {STEPS.map((step, index) => {
               const reached = index <= activeStep && phase !== 'idle'
               return (
-                <li key={step.key} className="flex items-center gap-1.5">
+                <li key={step} className="flex items-center gap-1.5">
                   <span
                     className={cn(
                       'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 transition-colors',
@@ -125,7 +124,7 @@ export function CurrentJobCard({
                     )}
                   >
                     {index === 3 && reached ? <CircleCheck className="size-3" /> : null}
-                    {step.label}
+                    {t(step)}
                   </span>
                   {index < STEPS.length - 1 ? (
                     <span className="text-muted-foreground/60">→</span>
@@ -136,14 +135,17 @@ export function CurrentJobCard({
           </ol>
         </div>
 
-        {/* Overall progress */}
+        {/* Overall progress + ETA */}
         <div className="space-y-1.5">
-          <div className="flex items-baseline justify-between text-sm">
-            <span className="text-muted-foreground">处理进度</span>
+          <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+            <span className="text-muted-foreground">{t('job.progress')}</span>
             <span className="font-medium tabular-nums">
               {stats.progressPct}%
               <span className="ml-2 text-xs font-normal text-muted-foreground">
-                已处理 {stats.processed.toLocaleString()} / {handled.toLocaleString()}
+                {t('job.processed')} {stats.processed.toLocaleString()} / {handled.toLocaleString()}
+              </span>
+              <span className="ml-2 text-xs font-normal text-muted-foreground">
+                {t('job.eta', { duration: stats.etaMs === null ? '—' : formatDuration(stats.etaMs) })}
               </span>
             </span>
           </div>
@@ -152,28 +154,28 @@ export function CurrentJobCard({
             segments={[
               {
                 key: 'done',
-                label: '已完成',
+                label: t('legend.done'),
                 value: stats.done,
                 className: 'bg-emerald-500',
                 dotClassName: 'bg-emerald-500',
               },
               {
                 key: 'failed',
-                label: '失败',
+                label: t('legend.failed'),
                 value: stats.failed,
                 className: 'bg-destructive',
                 dotClassName: 'bg-destructive',
               },
               {
                 key: 'crawling',
-                label: '抓取中',
+                label: t('legend.crawling'),
                 value: stats.crawling,
                 className: 'bg-amber-500',
                 dotClassName: 'bg-amber-500',
               },
               {
                 key: 'pending',
-                label: '待处理',
+                label: t('legend.pending'),
                 value: stats.pending,
                 className: 'bg-slate-400 dark:bg-slate-600',
                 dotClassName: 'bg-slate-400 dark:bg-slate-600',

@@ -14,6 +14,7 @@ import type {
   CrawlTaskMeta,
   HistoryPoint,
   LogEntry,
+  LogLevel,
   PersistedSnapshot,
   UrlRecord,
 } from '@/types/crawl'
@@ -71,7 +72,52 @@ export function saveSnapshot(input: SaveInput): SaveResult {
 }
 
 /**
+ * Shape of a log entry written before the i18n refactor: plain text, no key.
+ *
+ * 舊版（i18n 之前）日誌的形狀：純文字、沒有 key。
+ */
+interface LegacyLogEntry {
+  id?: number
+  ts?: number
+  level?: LogLevel
+  message?: string
+  url?: string
+}
+
+/**
+ * Upgrade one persisted log entry to the current structured shape.
+ *
+ * Old snapshots carried formatted prose in `message`; there is no way back to a key,
+ * so they are wrapped in the `log.legacy` template and shown verbatim.
+ *
+ * @returns The migrated entry, or `null` when the value is unusable.
+ */
+function migrateLogEntry(raw: unknown): LogEntry | null {
+  if (!raw || typeof raw !== 'object') return null
+  const entry = raw as LegacyLogEntry & Partial<LogEntry>
+
+  // Already structured.
+  if (typeof entry.key === 'string') return entry as LogEntry
+
+  if (typeof entry.message === 'string') {
+    return {
+      id: typeof entry.id === 'number' ? entry.id : 0,
+      ts: typeof entry.ts === 'number' ? entry.ts : Date.now(),
+      level: entry.level ?? 'info',
+      key: 'log.legacy',
+      params: { message: entry.message },
+      url: entry.url,
+    }
+  }
+
+  return null
+}
+
+/**
  * Read the snapshot; corrupted data or a version mismatch returns null.
+ *
+ * Log entries are migrated on the way out so a snapshot written before the i18n
+ * refactor still restores.
  */
 export function loadSnapshot(): PersistedSnapshot | null {
   try {
@@ -79,7 +125,14 @@ export function loadSnapshot(): PersistedSnapshot | null {
     if (!raw) return null
     const parsed = JSON.parse(raw) as PersistedSnapshot
     if (parsed?.version !== 1 || !Array.isArray(parsed.records)) return null
-    return parsed
+
+    const logs = Array.isArray(parsed.logs)
+      ? parsed.logs
+          .map(migrateLogEntry)
+          .filter((entry): entry is LogEntry => entry !== null)
+      : []
+
+    return { ...parsed, logs }
   } catch {
     return null
   }

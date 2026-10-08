@@ -17,8 +17,22 @@ export {
   type SitemapEntry,
   type SitemapExportOptions,
 } from './entries'
-export { priorityForDepth } from './priority'
+export {
+  FALLBACK_PRIORITY,
+  DEFAULT_PRIORITY_CONTEXT,
+  pathDepthOf,
+  priorityForDepth,
+  relativePathDepthOf,
+  resolvePriority,
+  type PriorityContext,
+} from './priority'
 export { changefreqForDepth, resolveChangefreq, CHANGEFREQ_OPTIONS } from './changefreq'
+export {
+  displayUrl,
+  parseHostOverride,
+  toReadableUrl,
+  type UrlDisplayOptions,
+} from './url-display'
 export {
   DEFAULT_MAX_URLS_PER_FILE,
   splitSitemaps,

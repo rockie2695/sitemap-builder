@@ -124,6 +124,24 @@ describe('computeStats / 衍生統計', () => {
     )
     expect(stats.perMinute).toBe(2) // 2 pages in 60s
   })
+
+  it('estimates the remaining time from the throughput / 依吞吐量估算剩餘時間', () => {
+    const history = [
+      { t: NOW - 30_000, done: 0, failed: 0, pending: 20 },
+      { t: NOW - 5_000, done: 10, failed: 0, pending: 10 },
+    ]
+    const records = archive(
+      ...(Array.from({ length: 10 }, () => 'done') as UrlRecord['status'][]),
+    )
+    // 10 pages in 25s → 24 pages/min; 12 remaining → 30s.
+    const stats = computeStats(records, runtime(), NOW, 12, history)
+    expect(stats.etaMs).toBe(30_000)
+  })
+
+  it('reports no ETA while throughput is unknown / 吞吐量未知時不估算', () => {
+    const stats = computeStats(archive('queued', 'queued'), runtime({ startedAt: null }), 0, 2, [])
+    expect(stats.etaMs).toBeNull()
+  })
 })
 
 describe('formatDuration / 耗時格式化', () => {

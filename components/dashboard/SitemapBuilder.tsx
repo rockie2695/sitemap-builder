@@ -24,6 +24,7 @@ import { LogPanel } from '@/components/dashboard/LogPanel'
 import { StatsCards } from '@/components/dashboard/StatsCards'
 import { UrlList } from '@/components/dashboard/UrlList'
 import { ViewTabs, type ViewMode } from '@/components/dashboard/ViewTabs'
+import { useI18n } from '@/components/providers/LocaleProvider'
 import { useCrawler } from '@/hooks/crawler'
 import { useStoredState } from '@/hooks/useStoredState'
 import { formatDuration } from '@/lib/stats'
@@ -33,18 +34,19 @@ const VIEW_KEY = 'view-mode'
 
 /** The whole application UI. */
 export function SitemapBuilder() {
+  const { t } = useI18n()
   const crawler = useCrawler()
   const [inputUrl, setInputUrl] = useState('')
   const [inputError, setInputError] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useStoredState<ViewMode>(VIEW_KEY, 'split')
+  const [viewMode, setViewMode] = useViewMode()
 
   const { stats, records, phase, options } = crawler
 
   /** Validate and start a task. */
   const handleStart = useCallback(() => {
     const result = crawler.start(inputUrl)
-    setInputError(result.ok ? null : (result.error ?? '输入无效'))
-  }, [crawler, inputUrl])
+    setInputError(result.ok ? null : (result.error ?? t('error.invalidUrl')))
+  }, [crawler, inputUrl, t])
 
   /** Records that should be exported, honouring the "exclude failed" switch. */
   const exportableRecords = useMemo(
@@ -54,11 +56,6 @@ export function SitemapBuilder() {
 
   /** Origin used for `<loc>` values inside a generated sitemapindex.xml. */
   const baseUrl = crawler.task?.origin ?? ''
-
-  /** Banner copy when the visible state came from a snapshot. */
-  const restoredSummary = crawler.restoredAt
-    ? `上次任务已发现 ${records.length.toLocaleString()} 个页面，待处理 ${stats.pending.toLocaleString()} 个。`
-    : null
 
   const showUrlList = viewMode !== 'logs'
   const showLogs = viewMode !== 'list'
@@ -84,7 +81,9 @@ export function SitemapBuilder() {
         <AlertsPanel
           inputError={inputError}
           persistError={crawler.persistError}
-          restoredSummary={restoredSummary}
+          restored={crawler.restoredAt !== null}
+          restoredCount={records.length}
+          restoredPending={stats.pending}
           showHint={phase === 'idle'}
           onResume={crawler.resume}
           onDiscard={crawler.reset}
@@ -158,4 +157,9 @@ export function SitemapBuilder() {
       </main>
     </LazyMotion>
   )
+}
+
+/** Remembered view mode, defaulting to the split dashboard. */
+function useViewMode(): [ViewMode, (mode: ViewMode) => void] {
+  return useStoredState<ViewMode>(VIEW_KEY, 'split')
 }

@@ -63,6 +63,19 @@ function writeFixtures() {
     join(ROOT, 'test', 'c.html'),
     page('页面 C', '<a href="index.html">返回首页</a>'),
   )
+  // A page that links to the always-failing endpoint, used by the retry test.
+  // Lives in its own directory so the main crawl is unaffected.
+  mkdirSync(join(ROOT, 'retry'), { recursive: true })
+  writeFileSync(
+    join(ROOT, 'retry', 'index.html'),
+    page('retry root', '<a href="flaky.html">flaky</a>'),
+  )
+
+  // Non-ASCII paths, used by the readable-URL export test.
+  mkdirSync(join(ROOT, 'zh'), { recursive: true })
+  writeFileSync(join(ROOT, 'zh', 'index.html'), page('中文目录', '<a href="中文.html">中文页面</a>'))
+  writeFileSync(join(ROOT, 'zh', '中文.html'), page('中文页面', '<a href="index.html">返回</a>'))
+
   writeFileSync(join(ROOT, 'test', 'doc.pdf'), '%PDF-1.4 fixture')
   writeFileSync(join(ROOT, 'testing.html'), page('越界页面', '<a href="/test/index.html">进入 test</a>'))
 }
@@ -70,6 +83,14 @@ function writeFixtures() {
 createServer((request, response) => {
   const url = new URL(request.url ?? '/', 'http://localhost')
   const pathname = decodeURIComponent(url.pathname)
+
+  // A deliberately broken endpoint: drops the connection so the browser reports a
+  // transport error. Used by the retry E2E test.
+  if (pathname.endsWith('/flaky.html')) {
+    request.socket.destroy()
+    return
+  }
+
   const target = join(ROOT, normalize(pathname).replace(/^(\.\.[/\\])+/, ''))
 
   // Directories: 301 to the slashed form, then fall back to index.html.

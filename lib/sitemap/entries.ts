@@ -6,11 +6,12 @@
 import type { Changefreq, CrawlOptions, UrlRecord } from '@/types/crawl'
 
 import { resolveChangefreq } from './changefreq'
-import { priorityForDepth } from './priority'
+import { resolvePriority, type PriorityContext } from './priority'
+import { displayUrl, type UrlDisplayOptions } from './url-display'
 
 /** One `<url>` block; `null`/`undefined` fields are omitted from the XML. */
 export interface SitemapEntry {
-  /** Canonical absolute URL. */
+  /** Canonical absolute URL (already presentation-processed). */
   url: string
   /** W3C date-time, e.g. `2026-10-07T06:11:16+00:00`. */
   lastmod?: string | null
@@ -20,11 +21,21 @@ export interface SitemapEntry {
   priority?: number | null
 }
 
-/** The subset of crawl options that only affects exported output. */
-export type SitemapExportOptions = Pick<
-  CrawlOptions,
-  'includeLastmod' | 'includePriority' | 'includeChangefreq' | 'changefreq'
->
+/**
+ * Everything the exporters need.
+ *
+ * `pathPrefix` comes from the task (not from `CrawlOptions`) because the priority
+ * and URL-display strategies need it.
+ */
+export interface SitemapExportOptions extends UrlDisplayOptions {
+  includeLastmod: boolean
+  includePriority: boolean
+  priorityStrategy: CrawlOptions['priorityStrategy']
+  includeChangefreq: boolean
+  changefreq: CrawlOptions['changefreq']
+  /** Scope prefix of the task, used by `relativePathDepth`. */
+  pathPrefix: string
+}
 
 /**
  * Format a date the way sitemaps.org expects (W3C date-time with a timezone).
@@ -57,18 +68,23 @@ export function resolveLastmod(record: UrlRecord): string | null {
  * Convert the archive into sitemap entries, honouring the field switches.
  *
  * @param records Archive in discovery order.
- * @param options Which optional fields to emit.
+ * @param options Field switches plus the URL/priority strategy context.
  */
 export function toSitemapEntries(
   records: readonly UrlRecord[],
   options: SitemapExportOptions,
 ): SitemapEntry[] {
-  const { includeLastmod, includePriority, includeChangefreq, changefreq } = options
+  const priorityContext: PriorityContext = {
+    strategy: options.priorityStrategy,
+    pathPrefix: options.pathPrefix,
+  }
 
   return records.map((record) => ({
-    url: record.url,
-    lastmod: includeLastmod ? resolveLastmod(record) : undefined,
-    changefreq: includeChangefreq ? resolveChangefreq(changefreq, record.depth) : undefined,
-    priority: includePriority ? priorityForDepth(record.depth) : undefined,
+    url: displayUrl(record, options),
+    lastmod: options.includeLastmod ? resolveLastmod(record) : undefined,
+    changefreq: options.includeChangefreq
+      ? resolveChangefreq(options.changefreq, record.depth)
+      : undefined,
+    priority: options.includePriority ? resolvePriority(record, priorityContext) : undefined,
   }))
 }

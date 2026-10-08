@@ -32,6 +32,7 @@ import type {
 import { SAMPLE_INTERVAL_MS } from './constants'
 import { clearQueue, createCrawlEngine, type CrawlEngineRefs } from './engine'
 import { crawlReducer, initialCrawlState } from './reducer'
+import type { StopReason } from './types'
 import { useCrawlerPersistence } from './usePersistence'
 
 export { DEFAULT_OPTIONS } from './constants'
@@ -66,7 +67,7 @@ export interface UseCrawlerResult {
   start: (input: string) => StartResult
   pause: () => void
   resume: () => void
-  stop: (reason?: string) => void
+  stop: (reason?: StopReason) => void
   reset: () => void
   clearLogs: () => void
   setOptions: (patch: Partial<CrawlOptions>) => void
@@ -89,6 +90,7 @@ export function useCrawler(): UseCrawlerResult {
   const controlRef = useRef({ paused: false })
   const queueRef = useRef<string[]>([])
   const seenRef = useRef<Set<string>>(new Set())
+  const attemptsRef = useRef<Map<string, number>>(new Map())
   const abortRef = useRef<AbortController>(new AbortController())
   const runningRef = useRef(false)
 
@@ -101,6 +103,7 @@ export function useCrawler(): UseCrawlerResult {
       control: controlRef,
       queue: queueRef,
       seen: seenRef,
+      attempts: attemptsRef,
       abort: abortRef,
       running: runningRef,
     }),
@@ -189,7 +192,7 @@ export function useCrawler(): UseCrawlerResult {
   }, [getEngine])
 
   /** Cancel immediately: abort the in-flight request and drop the queue. */
-  const stop = useCallback((reason?: string) => {
+  const stop = useCallback((reason?: StopReason) => {
     controlRef.current.paused = false
     clearQueue(refs)
     abortRef.current.abort()

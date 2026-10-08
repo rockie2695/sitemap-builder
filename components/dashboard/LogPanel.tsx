@@ -1,11 +1,11 @@
 /**
  * Live log panel: level filter, keyword search, auto-follow and export.
  *
- * Rows are virtualised like the URL table; `ROW_HEIGHT` must match the virtual
- * window's `rowHeight`.
+ * Log entries are structured (i18n key + params), so the panel renders them for the
+ * active locale, and filtering happens on the rendered text.
  *
  * 即時日誌面板：等級篩選、關鍵字搜尋、自動跟隨與匯出。
- * 與 URL 表格相同採視窗化，`ROW_HEIGHT` 必須與虛擬視窗的 `rowHeight` 一致。
+ * 日誌條目是結構化的（i18n 鍵 + 參數），因此面板以當前語系呈現，篩選也針對呈現後文字。
  */
 'use client'
 
@@ -13,6 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { UIEvent } from 'react'
 import { Download, Eraser, ScrollText, Search } from 'lucide-react'
 
+import { useI18n } from '@/components/providers/LocaleProvider'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -33,7 +34,7 @@ import type { LogEntry, LogLevel } from '@/types/crawl'
 /** Fixed row height; must match the virtual window's `rowHeight`. */
 const ROW_HEIGHT = 26
 
-/** Colour + label per log level. */
+/** Colour + label per log level (labels are conventional, not translated). */
 const LEVEL_META: Record<LogLevel, { label: string; dot: string; text: string }> = {
   info: { label: 'INFO', dot: 'bg-slate-400', text: 'text-slate-700 dark:text-slate-300' },
   success: {
@@ -61,6 +62,7 @@ interface LogPanelProps {
 
 /** The live log panel. */
 export function LogPanel({ logs, onClear }: LogPanelProps) {
+  const { t, tLog, locale } = useI18n()
   const [levelFilter, setLevelFilter] = useState<'all' | LogLevel>('all')
   const [query, setQuery] = useState('')
   const [autoScroll, setAutoScroll] = useState(true)
@@ -68,15 +70,21 @@ export function LogPanel({ logs, onClear }: LogPanelProps) {
   const userScrolledRef = useRef(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
 
+  /** Render every entry once, then filter on the rendered text. */
+  const rendered = useMemo(
+    () => logs.map((entry) => ({ entry, text: tLog(entry) })),
+    [logs, tLog],
+  )
+
   /** Apply the level filter and keyword search. */
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase()
-    return logs.filter((entry) => {
+    return rendered.filter(({ entry, text }) => {
       if (levelFilter !== 'all' && entry.level !== levelFilter) return false
       if (!keyword) return true
-      return entry.message.toLowerCase().includes(keyword)
+      return text.toLowerCase().includes(keyword)
     })
-  }, [logs, levelFilter, query])
+  }, [rendered, levelFilter, query])
 
   const list = useVirtualWindow({ count: filtered.length, rowHeight: ROW_HEIGHT, overscan: 10 })
 
@@ -102,7 +110,7 @@ export function LogPanel({ logs, onClear }: LogPanelProps) {
       <CardHeader className="gap-3 pb-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <ScrollText className="size-4 text-muted-foreground" />
-          实时日志
+          {t('logs.title')}
           <span className="text-xs font-normal text-muted-foreground">
             {filtered.length.toLocaleString()}
             {filtered.length !== logs.length ? ` / ${logs.length.toLocaleString()}` : ''}
@@ -116,7 +124,7 @@ export function LogPanel({ logs, onClear }: LogPanelProps) {
               name="log-search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索日志"
+              placeholder={t('logs.searchPlaceholder')}
               className="h-8 w-40 pl-7 text-xs"
             />
           </div>
@@ -130,7 +138,7 @@ export function LogPanel({ logs, onClear }: LogPanelProps) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">全部级别</SelectItem>
+              <SelectItem value="all">{t('logs.level.all')}</SelectItem>
               <SelectItem value="info">INFO</SelectItem>
               <SelectItem value="success">OK</SelectItem>
               <SelectItem value="warn">WARN</SelectItem>
@@ -146,19 +154,25 @@ export function LogPanel({ logs, onClear }: LogPanelProps) {
                 setAutoScroll(checked)
               }}
             />
-            自动滚动
+            {t('logs.autoScroll')}
           </label>
 
           <Button
             type="button"
             variant="ghost"
             size="icon-sm"
-            title="导出日志"
-            onClick={() => downloadFile('crawl-log.txt', buildLogText(logs), 'text/plain')}
+            title={t('logs.export')}
+            onClick={() => downloadFile('crawl-log.txt', buildLogText(logs, locale), 'text/plain')}
           >
             <Download className="size-3.5" />
           </Button>
-          <Button type="button" variant="ghost" size="icon-sm" title="清空日志" onClick={onClear}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            title={t('logs.clear')}
+            onClick={onClear}
+          >
             <Eraser className="size-3.5" />
           </Button>
         </div>
@@ -172,7 +186,7 @@ export function LogPanel({ logs, onClear }: LogPanelProps) {
         >
           {filtered.length === 0 ? (
             <div className="flex h-full items-center justify-center font-sans text-sm text-muted-foreground">
-              暂无日志
+              {t('logs.empty')}
             </div>
           ) : (
             <div className="relative" style={{ height: list.totalHeight }}>
@@ -180,14 +194,14 @@ export function LogPanel({ logs, onClear }: LogPanelProps) {
                 className="absolute inset-x-0 top-0"
                 style={{ transform: `translateY(${list.paddingTop}px)` }}
               >
-                {visible.map((entry) => {
+                {visible.map(({ entry, text }) => {
                   const meta = LEVEL_META[entry.level]
                   return (
                     <div
                       key={entry.id}
                       className="flex items-center gap-2 border-b border-border/40 px-2 transition-colors last:border-b-0 hover:bg-muted/30"
                       style={{ height: ROW_HEIGHT }}
-                      title={entry.message}
+                      title={text}
                     >
                       <span className="shrink-0 text-muted-foreground">{formatTime(entry.ts)}</span>
                       <span
@@ -199,7 +213,7 @@ export function LogPanel({ logs, onClear }: LogPanelProps) {
                         <span className={cn('size-1.5 rounded-full', meta.dot)} />
                         {meta.label}
                       </span>
-                      <span className="truncate">{entry.message}</span>
+                      <span className="truncate">{text}</span>
                     </div>
                   )
                 })}

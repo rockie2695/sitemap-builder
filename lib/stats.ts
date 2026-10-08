@@ -32,6 +32,8 @@ export interface DerivedStats {
   avgMs: number
   /** Throughput in pages/minute (recent 60s samples preferred). */
   perMinute: number
+  /** Estimated remaining time in ms, or `null` when throughput is unknown. */
+  etaMs: number | null
 }
 
 /**
@@ -97,6 +99,11 @@ export function computeStats(
     elapsedMs,
     avgMs: done === 0 ? 0 : Math.round(doneDurationSum / done),
     perMinute: Math.round(perMinute * 10) / 10,
+    // Remaining work divided by the observed rate; unknown until the first samples.
+    etaMs:
+      perMinute > 0
+        ? Math.round(((pending + crawling) / perMinute) * 60_000)
+        : null,
   }
 }
 

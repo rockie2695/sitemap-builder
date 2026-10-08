@@ -1,12 +1,12 @@
 /**
  * Progress visualisation: a radial completion gauge plus an area chart of
- * "已完成 / 待处理" over time.
+ * "done / pending" over time.
  *
- * Both charts read the same {@link HistoryPoint} stream the crawl engine samples
- * once per second while running.
+ * The trend can show either a rolling window (recent) or the whole history since the
+ * task started; the choice is remembered like the view mode.
  *
  * 進度視覺化：環形完成度，以及「已完成／待處理」隨時間變化的面積圖。
- * 兩張圖都讀取抓取引擎在執行期間每秒採樣的同一份歷史資料。
+ * 趨勢可顯示滾動視窗（當前時段）或自開始以來的全部資料；選擇會像檢視模式一樣被記住。
  */
 'use client'
 
@@ -25,9 +25,19 @@ import {
 } from 'recharts'
 import { ChevronDown, ChevronRight, LineChart } from 'lucide-react'
 
+import { useI18n } from '@/components/providers/LocaleProvider'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { useStoredState } from '@/hooks/useStoredState'
+import { formatAxisNumber, yAxisWidthFor } from '@/lib/charts'
 import type { DerivedStats } from '@/lib/stats'
 import type { HistoryPoint } from '@/types/crawl'
+
+/** How much of the history the trend chart shows. */
+type ChartPeriod = 'current' | 'full'
+
+/** Samples shown in the "current" period (1 sample/s → one minute). */
+const CURRENT_WINDOW_SAMPLES = 60
 
 interface ChartsPanelProps {
   /** Derived counters. */
@@ -43,47 +53,71 @@ function formatClock(ts: number): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`
 }
 
-/** Collapsible chart section. */
+/** Collapsible chart section with a period switch. */
 export function ChartsPanel({ stats, history }: ChartsPanelProps) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(true)
+  const [period, setPeriod] = useStoredState<ChartPeriod>('chart-period', 'current')
 
-  /** Map the raw samples into chart-friendly rows. */
+  /** Samples actually rendered, honouring the period switch. */
+  const samples = useMemo(
+    () => (period === 'current' ? history.slice(-CURRENT_WINDOW_SAMPLES) : history),
+    [history, period],
+  )
+
+  /** Largest value on the Y axis, used to size its label gutter. */
+  const maxValue = useMemo(
+    () => samples.reduce((max, point) => Math.max(max, point.done, point.pending), 0),
+    [samples],
+  )
+
   const trend = useMemo(
-    () =>
-      history.map((point) => ({
-        t: formatClock(point.t),
-        done: point.done,
-        pending: point.pending,
-      })),
-    [history],
+    () => samples.map((point) => ({ t: formatClock(point.t), done: point.done, pending: point.pending })),
+    [samples],
   )
 
   /** Single data point driving the radial gauge. */
-  const ringData = useMemo(
-    () => [{ name: '完成度', value: stats.progressPct }],
-    [stats.progressPct],
-  )
+  const ringData = useMemo(() => [{ name: 'progress', value: stats.progressPct }], [stats.progressPct])
 
   const handled = stats.processed + stats.pending + stats.crawling
 
   return (
     <Card>
-      <CardHeader className="pb-2">
+      <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 pb-2">
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
-          className="flex w-full items-center justify-between text-left"
+          className="flex items-center gap-2 text-left"
           aria-expanded={open}
         >
           <CardTitle className="flex items-center gap-2 text-base">
             <LineChart className="size-4 text-muted-foreground" />
-            进度可视化
+            {t('charts.title')}
           </CardTitle>
           <span className="flex items-center gap-1 text-xs text-muted-foreground">
             {open ? <ChevronDown className="size-4" /> : <ChevronRight className="size-4" />}
-            {open ? '收起' : '展开'}
+            {open ? t('charts.collapse') : t('charts.expand')}
           </span>
         </button>
+
+        <ToggleGroup
+          type="single"
+          value={period}
+          onValueChange={(next) => {
+            if (next) setPeriod(next as ChartPeriod)
+          }}
+          variant="outline"
+          size="sm"
+          aria-label={t('charts.period.hint')}
+          title={t('charts.period.hint')}
+        >
+          <ToggleGroupItem value="current" className="text-xs">
+            {t('charts.period.current')}
+          </ToggleGroupItem>
+          <ToggleGroupItem value="full" className="text-xs">
+            {t('charts.period.full')}
+          </ToggleGroupItem>
+        </ToggleGroup>
       </CardHeader>
 
       {open ? (
@@ -120,11 +154,11 @@ export function ChartsPanel({ stats, history }: ChartsPanelProps) {
           <div className="h-[180px]">
             {trend.length < 2 ? (
               <div className="flex h-full items-center justify-center rounded-md border border-dashed text-sm text-muted-foreground">
-                开始抓取后这里会显示「已完成 / 待处理」随时间的变化
+                {t('charts.empty')}
               </div>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trend} margin={{ top: 6, right: 8, bottom: 0, left: -18 }}>
+                <AreaChart data={trend} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis
                     dataKey="t"
@@ -137,7 +171,9 @@ export function ChartsPanel({ stats, history }: ChartsPanelProps) {
                     tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                     axisLine={false}
                     tickLine={false}
-                    width={40}
+                    // Width tracks the largest label so thousands are never clipped.
+                    width={yAxisWidthFor(maxValue)}
+                    tickFormatter={formatAxisNumber}
                   />
                   <ChartTooltip
                     contentStyle={{
@@ -151,7 +187,7 @@ export function ChartsPanel({ stats, history }: ChartsPanelProps) {
                   <Area
                     type="monotone"
                     dataKey="pending"
-                    name="待处理"
+                    name={t('charts.series.pending')}
                     stroke="var(--chart-2)"
                     fill="var(--chart-2)"
                     fillOpacity={0.18}
@@ -160,7 +196,7 @@ export function ChartsPanel({ stats, history }: ChartsPanelProps) {
                   <Area
                     type="monotone"
                     dataKey="done"
-                    name="已完成"
+                    name={t('charts.series.done')}
                     stroke="var(--color-emerald-500)"
                     fill="var(--color-emerald-500)"
                     fillOpacity={0.22}

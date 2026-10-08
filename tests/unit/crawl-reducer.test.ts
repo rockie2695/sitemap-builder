@@ -147,7 +147,7 @@ describe('task lifecycle / 任務生命週期', () => {
     expect(state.phase).toBe('paused')
     expect(state.stats.consecutiveErrors).toBe(5)
     // The pause explanation is the newest log entry.
-    expect(state.logs[state.logs.length - 1].message).toContain('已自动暂停')
+    expect(state.logs[state.logs.length - 1].key).toBe('log.page.autoPaused')
   })
 
   it('resets the error streak on success / 成功後重置連續錯誤', () => {
@@ -194,7 +194,7 @@ describe('stop settling / 停止收尾', () => {
     const stopped = crawlReducer(crawling, { type: 'task/stop', now: NOW + 100 })
     expect(stopped.phase).toBe('stopped')
     expect(stopped.records.get(TASK.startUrl)?.status).toBe('failed')
-    expect(stopped.records.get(TASK.startUrl)?.error).toContain('任务已停止')
+    expect(stopped.records.get(TASK.startUrl)?.error).toContain('Task stopped')
     expect(stopped.pendingCount).toBe(0)
   })
 
@@ -270,10 +270,10 @@ describe('options and logs / 選項與日誌', () => {
 
   it('caps the log ring buffer / 日誌環形緩衝有上限', () => {
     let state = started()
-    for (let i = 0; i < 3000; i += 1) {
+    for (let i = 0; i < 4000; i += 1) {
       state = crawlReducer(state, { type: 'tick', now: NOW + i })
     }
-    expect(state.history.length).toBe(240) // history cap
+    expect(state.history.length).toBe(3600) // history cap (HISTORY_LIMIT)
     state = crawlReducer(state, { type: 'logs/clear' })
     expect(state.logs).toHaveLength(0)
   })
