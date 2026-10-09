@@ -44,6 +44,10 @@ npm run dev         # dev server; only ONE dev instance per project is allowed (
 | `lib/crawler/crawlPage.ts` | Server-side page fetch; injectable browser for tests |
 | `lib/crawler/schema.ts` | zod schemas — single source of truth for the wire format |
 | `lib/sitemap/*` | Entry building, priority/URL strategies, XML serialisation, splitting |
+| `lib/crawler/seoDocument.ts` | Per-page SEO extraction (self-contained for `page.evaluate`) |
+| `lib/seo/*` | SEO scoring, site-wide report and i18n key mapping (pure) |
+| `lib/serp/*` | SERP extraction/providers, rank lookup, query derivation, competitor analysis (opt-in) |
+| `hooks/serp/*` | `useSerp()`: spaced, resumable ranking queue + its own persistence key |
 | `lib/export/*` | CSV/JSON/log/ZIP + browser downloads |
 | `lib/i18n/*` | Three-locale dictionaries (type-checked) + runtime |
 | `components/providers/LocaleProvider.tsx` | Locale state `useI18n()` — wrap anything using UI copy |
@@ -85,6 +89,27 @@ npm run dev         # dev server; only ONE dev instance per project is allowed (
 12. **UI copy comes from `useI18n()`** and every new key must be added to all three
     dictionaries (`lib/i18n/{en,zh-TW,zh-CN}.ts`) — the `Record<UiKey, string>` type
     makes a missing translation a compile error. 所有文案走 `useI18n()`，新鍵必須三語齊備。
+13. **`collectSeoFromDocument` must stay self-contained.** Playwright serializes it for
+    `page.evaluate`, so it may not reference module scope; add helpers *inside* it, and
+    keep the optional `doc = document` parameter so tests can pass a jsdom document.
+    該函式必須自足（會被序列化到頁面內），輔助函式要寫在裡面。
+14. **SEO scoring and reporting stay pure and memoised off the records array** — they
+    must not run on the 1-second sampler tick (`useMemo` on `records`).
+    SEO 評分／報告必須是純函式，且以 records 身分做記憶化。
+15. **`UrlRecord.seo` is optional** (failed pages and older snapshots lack it) and the
+    resume snapshot is **size-aware**: past ~3 MB the SEO payload is dropped and a warning
+    is logged. SEO 資料為選填，且快照超過體積上限時會丟棄它並記錄警告。
+16. **`collectSerpResults` / `detectSerpBlock` must stay self-contained**, exactly like
+    `collectSeoFromDocument`: Playwright serializes them for `page.evaluate`, so no module
+    scope, and the optional `doc = document` parameter must remain for jsdom tests.
+    SERP 擷取函式必須自足，且保留選填的 `doc` 參數供測試使用。
+17. **SERP is opt-in and rate-limited**: one query at a time with a hard
+    `SERP_MIN_INTERVAL_MS` floor, fatal blocks auto-pause the run, and the paid provider
+    key (`SERPAPI_KEY`) is read **server-side only** — never ship it to the client.
+    SERP 為選用且限速；致命封鎖會自動暫停；付費 key 只在伺服器端讀取。
+18. **SERP records live under their own localStorage key**, separate from the crawl
+    snapshot, and competitor analysis reuses `collectSeoFromDocument` so the comparison
+    stays apples-to-apples. SERP 結果自己一個儲存鍵；競品分析共用 SEO 採集器。
 
 ## Option behaviour notes / 選項行為備註
 

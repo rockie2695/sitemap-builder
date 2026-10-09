@@ -28,6 +28,15 @@ const MAX_QUEUE = 5_000
 const MAX_LOGS = 500
 const MAX_HISTORY = 120
 
+/**
+ * Serialized-size ceiling. SEO snapshots add roughly 1 KB per page, so a large crawl
+ * can approach the ~5 MB localStorage quota; past this we re-save without them.
+ *
+ * 序列化大小上限。SEO 快照每頁約 1KB，大型抓取會逼近 localStorage 的 ~5MB 配額；
+ * 超過此值時改為不含 SEO 資料再存一次。
+ */
+const MAX_SNAPSHOT_CHARS = 3_000_000
+
 /** Input for {@link saveSnapshot}. */
 export interface SaveInput {
   task: CrawlTaskMeta
@@ -41,16 +50,21 @@ export interface SaveInput {
 }
 
 /** Result of a write. */
-export type SaveResult = { ok: true } | { ok: false; reason: string }
+export type SaveResult =
+  | { ok: true; /** True when SEO data had to be dropped to fit the quota. */ seoDropped: boolean }
+  | { ok: false; reason: string }
 
 /**
  * Write the snapshot.
+ *
+ * SEO snapshots are the bulkiest field, so the write is size-aware: if the payload
+ * exceeds {@link MAX_SNAPSHOT_CHARS} it is written again with every record's `seo`
+ * omitted, and the caller is told so it can warn the user.
  *
  * @param input Everything needed to resume the task later.
  */
 export function saveSnapshot(input: SaveInput): SaveResult {
   try {
-    // Keep the most recent records — the queue references them by URL.
     const records = input.records.slice(-MAX_RECORDS)
     const snapshot: PersistedSnapshot = {
       version: 1,
@@ -64,8 +78,25 @@ export function saveSnapshot(input: SaveInput): SaveResult {
       stats: input.stats,
       history: input.history.slice(-MAX_HISTORY),
     }
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot))
-    return { ok: true }
+
+    /** Serialize, optionally dropping the per-record SEO snapshots. */
+    const serialize = (dropSeo: boolean): string =>
+      JSON.stringify(
+        dropSeo
+          ? { ...snapshot, records: records.map((record) => ({ ...record, seo: undefined })) }
+          : snapshot,
+      )
+
+    let payload = serialize(false)
+    let seoDropped = false
+
+    if (payload.length > MAX_SNAPSHOT_CHARS) {
+      payload = serialize(true)
+      seoDropped = true
+    }
+
+    window.localStorage.setItem(STORAGE_KEY, payload)
+    return { ok: true, seoDropped }
   } catch (error) {
     return { ok: false, reason: error instanceof Error ? error.message : String(error) }
   }

@@ -42,6 +42,7 @@ import type { SitemapExportOptions } from '@/lib/sitemap/entries'
 import type { UiKey } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import type { ChangefreqSetting, CrawlOptions, CrawlTaskMeta, PriorityStrategy, UrlRecord } from '@/types/crawl'
+import type { SerpRecord } from '@/types/serp'
 
 /** Priority strategy dropdown options. */
 const PRIORITY_STRATEGIES: Array<{ value: PriorityStrategy; label: UiKey }> = [
@@ -61,6 +62,8 @@ interface ExportBarProps {
   task: CrawlTaskMeta | null
   /** Public origin used for `<loc>` values inside sitemapindex.xml. */
   baseUrl: string
+  /** SERP records keyed by page URL, embedded in the CSV/JSON exports. */
+  serp?: Readonly<Record<string, SerpRecord>>
 }
 
 /** Short-lived confirmation shown next to the buttons. */
@@ -71,7 +74,7 @@ interface ExportFeedback {
 }
 
 /** Export bar with every download format and option. */
-export function ExportBar({ records, options, onOptionsChange, task, baseUrl }: ExportBarProps) {
+export function ExportBar({ records, options, onOptionsChange, task, baseUrl, serp = {} }: ExportBarProps) {
   const { t } = useI18n()
   const [feedback, setFeedback] = useState<ExportFeedback | null>(null)
   const hasData = records.length > 0
@@ -132,7 +135,7 @@ export function ExportBar({ records, options, onOptionsChange, task, baseUrl }: 
   /** Export the CSV inventory. */
   const handleExportCsv = () => {
     try {
-      downloadFile('sitemap.csv', buildCsv(records, exportOptions), 'text/csv')
+      downloadFile('sitemap.csv', buildCsv(records, exportOptions, serp), 'text/csv')
       report(t('export.done.csv', { count: records.length }))
     } catch (error) {
       report(`${t('export.failed')}: ${error instanceof Error ? error.message : String(error)}`, 'error')
@@ -142,7 +145,7 @@ export function ExportBar({ records, options, onOptionsChange, task, baseUrl }: 
   /** Export the full JSON inventory. */
   const handleExportJson = () => {
     try {
-      downloadFile('sitemap.json', buildJson(records, task, exportOptions), 'application/json')
+      downloadFile('sitemap.json', buildJson(records, task, exportOptions, serp), 'application/json')
       report(t('export.done.json'))
     } catch (error) {
       report(`${t('export.failed')}: ${error instanceof Error ? error.message : String(error)}`, 'error')

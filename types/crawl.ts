@@ -10,6 +10,7 @@
 
 /** i18n key/params referenced by log entries. */
 import type { LogMessageKey, MessageParams } from '@/lib/i18n/types'
+import type { SeoSnapshot } from '@/types/seo'
 
 /** Status of one URL in the crawl flow. */
 export type UrlStatus = 'queued' | 'crawling' | 'done' | 'failed'
@@ -42,6 +43,11 @@ export interface UrlRecord {
   foundLinks: number
   /** Failure reason. */
   error?: string
+  /**
+   * On-page SEO snapshot (audit). Optional: pages without a successful fetch, or
+   * snapshots written by an older version, simply have no SEO data.
+   */
+  seo?: SeoSnapshot
   queuedAt: number
   startedAt: number | null
   finishedAt: number | null

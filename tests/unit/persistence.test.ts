@@ -67,7 +67,7 @@ beforeEach(() => {
 
 describe('persistence / 斷點續爬', () => {
   it('round-trips a snapshot / 快照可完整往返', () => {
-    expect(saveSnapshot(input())).toEqual({ ok: true })
+    expect(saveSnapshot(input())).toEqual({ ok: true, seoDropped: false })
     const restored = loadSnapshot()
     expect(restored).not.toBeNull()
     expect(restored?.task.startUrl).toBe('https://example.com/')
@@ -99,6 +99,48 @@ describe('persistence / 斷點續爬', () => {
   it('returns null when records are missing / 缺少 records 回傳 null', () => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: 1 }))
     expect(loadSnapshot()).toBeNull()
+  })
+
+  it('drops SEO snapshots when the payload is too large / 過大時丟棄 SEO 快照', () => {
+    // ~1 KB of SEO data per record × 5000 records ≈ 5 MB, past the 3 MB guard.
+    const bulky = {
+      ...record,
+      seo: {
+        title: 'x'.repeat(300),
+        titleLength: 300,
+        metaDescription: 'y'.repeat(500),
+        metaDescriptionLength: 500,
+        h1: ['a'.repeat(100)],
+        headings: [{ level: 1, text: 'a'.repeat(100) }],
+        canonical: 'https://example.com/a',
+        metaRobots: null,
+        indexable: true,
+        lang: 'en',
+        hasViewport: true,
+        openGraph: { title: true, description: true, image: true },
+        twitter: { card: true, title: true, description: true, image: true },
+        images: { total: 1, missingAlt: 0 },
+        links: { internal: 1, external: 0, nofollow: 0 },
+        wordCount: 300,
+        structuredData: ['Article'],
+        hreflang: [],
+        keywords: Array.from({ length: 10 }, (_, index) => ({ term: 'keyword'.repeat(3) + index, count: 5 })),
+      },
+    }
+    const records = Array.from({ length: 5000 }, (_, index) => ({
+      ...bulky,
+      url: 'https://example.com/page-' + index,
+    }))
+
+    const result = saveSnapshot(input({ records, queue: [] }))
+    expect(result).toEqual({ ok: true, seoDropped: true })
+
+    // The snapshot still restores; only the SEO payload was sacrificed.
+    const restored = loadSnapshot()
+    expect(restored?.records).toHaveLength(5000)
+    expect(restored?.records[0].seo).toBeUndefined()
+    expect(restored?.records[0].url).toBe('https://example.com/page-0')
+    expect(restored?.logs).toHaveLength(1)
   })
 
   it('caps records, queue and logs / 截斷記錄、佇列與日誌', () => {

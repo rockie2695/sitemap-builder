@@ -27,6 +27,57 @@ export const crawlRequestSchema = z.object({
 /** Infer the validated request type. */
 export type CrawlRequest = z.infer<typeof crawlRequestSchema>
 
+/** A single keyword frequency entry. */
+const seoKeywordSchema = z.object({
+  term: z.string(),
+  count: z.number(),
+})
+
+/** One captured heading. */
+const seoHeadingSchema = z.object({
+  level: z.number(),
+  text: z.string(),
+})
+
+/**
+ * On-page SEO snapshot.
+ *
+ * Optional on the response so a client can still talk to an older server build that
+ * does not collect it yet.
+ *
+ * 單頁 SEO 快照。在回應中為選填，讓客戶端仍能與尚未收集它的舊版伺服器協作。
+ */
+export const seoSnapshotSchema = z.object({
+  title: z.string().nullable(),
+  titleLength: z.number(),
+  metaDescription: z.string().nullable(),
+  metaDescriptionLength: z.number(),
+  h1: z.array(z.string()),
+  headings: z.array(seoHeadingSchema),
+  canonical: z.string().nullable(),
+  metaRobots: z.string().nullable(),
+  indexable: z.boolean(),
+  lang: z.string().nullable(),
+  hasViewport: z.boolean(),
+  openGraph: z.object({
+    title: z.boolean(),
+    description: z.boolean(),
+    image: z.boolean(),
+  }),
+  twitter: z.object({
+    card: z.boolean(),
+    title: z.boolean(),
+    description: z.boolean(),
+    image: z.boolean(),
+  }),
+  images: z.object({ total: z.number(), missingAlt: z.number() }),
+  links: z.object({ internal: z.number(), external: z.number(), nofollow: z.number() }),
+  wordCount: z.number(),
+  structuredData: z.array(z.string()),
+  hreflang: z.array(z.string()),
+  keywords: z.array(seoKeywordSchema),
+})
+
 /** Body returned by `POST /api/crawl`, including partial failures. */
 export const crawlResponseSchema = z.object({
   /** Normalized, in-scope links found on the page. */
@@ -43,6 +94,8 @@ export const crawlResponseSchema = z.object({
   httpStatus: z.number().nullable(),
   /** Raw `Last-Modified` response header, when the server sends one. */
   lastModified: z.string().nullable(),
+  /** On-page SEO snapshot (absent on older server builds). */
+  seo: seoSnapshotSchema.optional(),
   /** Server-side handling time in milliseconds. */
   durationMs: z.number(),
   /** Present when the page reported an error; `links` may still be populated. */

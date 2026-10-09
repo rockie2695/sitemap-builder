@@ -121,5 +121,7 @@ export type CrawlAction =
     }
   /** Periodic sample: refreshes the clock and appends a chart point. */
   | { type: 'tick'; now: number }
+  /** Append log entries from outside the reducer (e.g. persistence notices). */
+  | { type: 'logs/add'; drafts: LogDraft[]; now: number }
   /** Drop all log entries (the export keeps whatever was captured). */
   | { type: 'logs/clear' }

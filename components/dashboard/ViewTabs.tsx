@@ -10,14 +10,14 @@
  */
 'use client'
 
-import { Columns2, ListTree, ScrollText } from 'lucide-react'
+import { Columns2, ListTree, ScrollText, SearchCheck } from 'lucide-react'
 
 import { useI18n } from '@/components/providers/LocaleProvider'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { UiKey } from '@/lib/i18n'
 
 /** Available layouts for the URL table + log panel. */
-export type ViewMode = 'split' | 'list' | 'logs'
+export type ViewMode = 'split' | 'list' | 'logs' | 'seo'
 
 /** Label plus tooltip key per mode. */
 const VIEW_ITEMS: Array<{
@@ -29,6 +29,7 @@ const VIEW_ITEMS: Array<{
   { value: 'split', label: 'view.split', hint: 'view.splitHint', icon: Columns2 },
   { value: 'list', label: 'view.list', hint: 'view.listHint', icon: ListTree },
   { value: 'logs', label: 'view.logs', hint: 'view.logsHint', icon: ScrollText },
+  { value: 'seo', label: 'view.seo', hint: 'view.seoHint', icon: SearchCheck },
 ]
 
 interface ViewTabsProps {

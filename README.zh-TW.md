@@ -15,6 +15,8 @@
 - [快速開始](#快速開始)
 - [抓取流程說明](#抓取流程說明)
 - [選項參考](#選項參考)
+- [站內 SEO 稽核](#站內-seo-稽核)
+- [SERP 排名與競品比較](#serp-排名與競品比較)
 - [功能清單](#功能清單)
 - [抓取規則](#抓取規則)
 - [sitemap 的選用欄位](#sitemap-的選用欄位)
@@ -167,7 +169,9 @@ ALLOW_PRIVATE_TARGETS=1 npm run dev
 | 匯出 | `sitemap.xml`（選用 `lastmod`/`priority`/`changefreq`、拆分多檔 + `sitemapindex.xml`）、`sitemap.csv`（含 BOM）、`sitemap.json`、日誌 txt；「排除失敗」開關；拆分以 ZIP 打包 |
 | 容錯 | 單頁失敗不中斷、連續 5 次失敗自動暫停、頁數上限自動停止、停止立即取消在途請求 |
 | 斷點續爬 | 任務快照寫入 localStorage；重新整理後可選擇繼續 |
-| 介面 | 分欄／列表／日誌檢視切換、明暗主題、數字動畫、骨架載入、固定匯出列 |
+| SEO 稽核 | 單頁 on-page 檢查與透明 0～100 分、修復建議，以及全站報告（重複、缺 meta、多 H1、noindex、內容過少、canonical 不一致） |
+| SERP 排名 | 選用：逐一以 H1／標題推導查詢、查詢排名、列出前段結果並並列**競品**單頁指標；可選瀏覽器或付費後端；固定間隔並在封鎖時自動暫停 |
+| 介面 | 分欄／列表／日誌／SEO 檢視切換、明暗主題、數字動畫、骨架載入、固定匯出列 |
 
 ---
 
@@ -230,6 +234,71 @@ ALLOW_PRIVATE_TARGETS=1 npm run dev
 > **關於 `priority`／`lastmod` 的實際作用**：Google 官方聲明會**忽略**這兩個欄位
 > （它使用自己的抓取訊號）。它們主要對 Bing 等其它搜尋引擎有意義，
 > `changefreq` 也只是提示。提供它們是為了輸出更完整的 sitemap，別指望靠它提升排名。
+
+---
+
+## 站內 SEO 稽核
+
+每個成功抓取的頁面都會自動稽核，結果顯示在 **SEO** 檢視標籤。不需要向伺服器額外請求：
+稽核讀取我們已經取得的 DOM，評分與報告都是純前端函式。
+
+**每頁收集**（`lib/crawler/seoDocument.ts`）：標題與長度、meta description 與長度、
+`h1`／`h2`／`h3`、canonical、`meta robots` 與可否索引、`html lang`、viewport、
+Open Graph 與 Twitter 標籤、圖片數與缺 `alt` 數、內鏈／外鏈／nofollow 數、
+字數（拉丁詞 + 中日韓字元）、JSON-LD 的 `@type`、`hreflang`，以及關鍵詞排行
+（拉丁詞與中日韓二元組）。
+
+**分數**（`lib/seo/score.ts`）：19 條規則、權重合計 100——標題 20、描述 15、H1 10、
+canonical 10、robots 10、圖片 alt 10、內容 5、Open Graph 5、Twitter 5、結構化資料 5、
+lang + viewport 5。`warn` 得一半權重，`info` 不計入分母，因此只會因「實際適用」的項目扣分。
+
+**全站報告**（`lib/seo/report.ts`）：重複標題、重複描述、缺少標題／描述、多個 H1、
+禁止索引、內容過少（<200 字）、canonical 不一致。
+
+**匯出**：CSV 新增 `seoScore`、`seoTitleLength`、`seoDescriptionLength`、`seoH1Count`、
+`seoImagesMissingAlt`、`seoWordCount`、`seoIndexable`；JSON 新增 `seoScore` 與完整 `seo` 快照。
+
+> **免責聲明**：分數是**我們自己透明的檢查清單**，不是 Google 指標，也不預測排名，
+> 更不包含 PageRank（它已沒有公開 API）。
+
+**儲存**：SEO 快照是續爬快照中體積最大的欄位，因此寫入時會檢查大小——
+若內容超過約 3MB，快照會**不含 SEO 資料**寫入，並在日誌中顯示警告。
+
+---
+
+## SERP 排名與競品比較
+
+**這個功能預設關閉，而且它是本專案唯一可能讓你被封鎖的部分。** Google 與 Bing 都會封鎖
+自動化瀏覽，官方搜尋 API 也已成過去（Bing Web Search 於 2025 年 8 月退役、Google
+Custom Search JSON API 不再接受新客戶）。使用前請先讀介面上的免責聲明。
+
+切到 **SEO** 檢視，開啟 **SERP 排名** 子頁籤。
+
+**查詢**（`lib/serp/queries.ts`）：每個已稽核頁面一個查詢，取它的 `H1`（最精煉的主題描述）
+或標題，去重後以**分數最低者優先**排序，讓真正想修的頁面先被檢查。單次執行有上限
+（預設 20，可調 1～100）。
+
+**執行**（`hooks/serp/*`）：前端佇列，一次一個查詢，**最小間隔 20 秒**。可續跑——
+已有儲存結果的頁面會略過，因此被封鎖後恢復會從中斷處繼續。結果存在自己的
+`localStorage` 鍵，與抓取快照分開。
+
+**讀取 SERP**（`lib/serp/extract.ts`、`lib/serp/provider.ts`）：
+
+- `playwright`（預設）：以共用的 Chromium 開啟真實搜尋頁，用寬鬆的啟發式擷取自然結果
+  （依 DOM 順序；過濾引擎自家網域、廣告與 `/url?q=` 包裝；去重）。遇到同意畫面／CAPTCHA
+  會判定為 `blocked` 並**自動暫停**該次執行。
+- `serpapi`：設定 `SERPAPI_KEY` 時使用付費 JSON API；`auto` 會在有 key 時自動採用。
+
+**競品比較**：每個查詢會抓取前 N 名（預設 2，上限 5）非自家結果，並用與自家抓取
+**完全相同**的單頁採集器分析（`lib/serp/competitor.ts`），因此標題長度、描述長度、
+H1 數量、字數與結構化資料能同基準比較。
+
+**匯出**：CSV 新增 `serpQuery`、`serpRank`、`serpTopHost`、`serpCompetitors`；
+JSON 每筆頁面內嵌完整 `serp` 記錄。
+
+> **合規與穩定度**：讀取搜尋頁可能違反引擎的服務條款——固定間隔與啟用開關就是為此存在。
+> 預期會偶爾被封鎖；需要穩定結果請改用付費後端。與稽核一樣，排名是當下結果的快照，
+> 不是 Google 的官方指標。
 
 ---
 
@@ -309,12 +378,14 @@ types/crawl.ts                  # 領域型別（前後端共用）
 | `ALLOW_PRIVATE_TARGETS` | 未設定 | `1`/`true` 放行 localhost、私有 IP 與 `169.254.x.x`。**預設關閉**：抓取 API 會代替訪客請求任意位址，沒有攔截等於開放 SSRF |
 | `CHROMIUM_EXECUTABLE_PATH` | 未設定 | 指定 Chromium 執行檔路徑。Vercel 上填入 `@sparticuz/chromium` 的 `executablePath()` |
 | `BROWSERLESS_WS_ENDPOINT` | 未設定 | 設定後改以 `chromium.connectOverCDP()` 連接雲端瀏覽器，不再本機啟動 |
+| `SERPAPI_KEY` | 未設定 | 啟用付費 SERP 後端。設定後 **provider = auto** 會改用 [SerpAPI](https://serpapi.com)，不再爬 Google／Bing；未設定則只有（可能被封鎖的）瀏覽器後端 |
 
 ```bash
 # .env.local
 ALLOW_PRIVATE_TARGETS=1
 # CHROMIUM_EXECUTABLE_PATH=/tmp/chromium
 # BROWSERLESS_WS_ENDPOINT=wss://xxx.browserless.io/?token=yyy
+# SERPAPI_KEY=your_serpapi_key
 ```
 
 ---
@@ -441,6 +512,12 @@ npm run e2e       # Playwright：真實 Chromium（會先建置）
 | 單元 | `tests/unit/url-display.test.ts` | 主機替換、可讀解碼、最終位址選擇 |
 | 單元 | `tests/unit/stats.test.ts` | 衍生統計、吞吐量、**預計剩餘**、格式化 |
 | 單元 | `tests/unit/charts.test.ts` | Y 軸寬度階梯與軸標籤格式 |
+| 單元 | `tests/unit/seo-document.test.ts` | 從解析後的 HTML 擷取（後設資料、標題層級、連結、關鍵詞、上限） |
+| 單元 | `tests/unit/seo-score.test.ts` | 規則判定、權重、評分與全站報告 |
+| 單元 | `tests/unit/serp-extract.test.ts` | 自然結果擷取、廣告／引擎過濾、封鎖偵測、搜尋網址 |
+| 單元 | `tests/unit/serp-rank.test.ts` | 主機正規化、排名查找、去重、競品挑選 |
+| 單元 | `tests/unit/serp-queries.test.ts` | H1／標題／關鍵詞推導、去重、低分優先、上限 |
+| 單元 | `tests/unit/serp-engine.test.ts` | 間隔佇列迴圈：間隔、可恢復與致命錯誤、暫停、中止 |
 | 單元 | `tests/unit/i18n.test.ts` | 字典對齊、插值、日誌格式化、語系偵測 |
 | 單元 | `tests/unit/export.test.ts` | CSV（BOM、引號跳脫）、JSON、日誌文字 |
 | 單元 | `tests/unit/zip.test.ts` | ZIP 結構以 `inflateRawSync` 解壓驗證 |
@@ -448,8 +525,8 @@ npm run e2e       # Playwright：真實 Chromium（會先建置）
 | 狀態機 | `tests/unit/crawl-reducer.test.ts` | 完整生命週期、404→失敗、自動暫停、停止收尾 |
 | 引擎 | `tests/unit/crawl-engine.test.ts` | 廣度優先順序、去重、斜線別名、頁數上限、暫停旗標、**重試、並發、重定向去重**（假 HTTP + 時鐘） |
 | API | `tests/api/crawl-route.test.ts` | zod 400、SSRF 400、200/206/502 映射（mock 瀏覽器） |
-| 元件 | `tests/components/*.test.tsx` | ControlPanel、UrlList、LogPanel、ExportBar、ViewTabs（包在 `LocaleProvider` 內） |
-| E2E | `tests/e2e/crawl.spec.ts` | 真實抓取、lastmod 兩種分支、priority 策略、重試、並發、暫停／繼續／停止、語系切換、主機替換、可讀 URL、圖表時段 |
+| 元件 | `tests/components/*.test.tsx` | ControlPanel、UrlList、LogPanel、ExportBar、ViewTabs、SeoTab（包在 `LocaleProvider` 內） |
+| E2E | `tests/e2e/crawl.spec.ts` | 真實抓取、lastmod 兩種分支、priority 策略、重試、並發、暫停／繼續／停止、語系切換、主機替換、可讀 URL、圖表時段、重定向排除、**SEO 稽核與 CSV 欄位** |
 
 測試設定有兩件事值得知道：
 
@@ -517,6 +594,9 @@ node --check chunk.js   # 退出碼 0 = 語法正確
 - 趨勢圖每秒取樣、最多保留 1 小時；更久的任務會丟棄最舊的取樣點
 - 不支援需要登入的頁面（cookie／Basic Auth／登入狀態）
 - 斷點續爬受 localStorage 配額限制；超大任務請分批
+- SEO 分數是啟發式檢查清單，不是排名訊號；PageRank 已無公開 API
+- SERP 排名是**選用且盡力而為**：搜尋引擎會封鎖自動化瀏覽，因此瀏覽器後端會間歇性失敗（會被偵測並自動暫停），擷取結果也依賴經常改版的版面；需要穩定請用付費 SerpAPI 後端
+- SERP 查詢以啟發式推導（H1／標題）、間隔 ≥20 秒、每次有上限且可續跑；排名只是某引擎對單一查詢的當下快照，不是時間序列的排名追蹤
 - TypeScript 釘在 **5.9**：原生 `typescript@7` 編譯器尚未被 typescript-eslint 支援，
   會導致 `npm run lint` 失敗
 

@@ -241,4 +241,76 @@ test.describe('sitemap builder E2E / 端對端', () => {
     expect(filtered).not.toContain('/redir/old.html')
     expect(filtered).toContain(`${FIXTURE}/redir/`)
   })
+
+  test('audits on-page SEO and reports site-wide issues / SEO 稽核與全站問題', async ({ page }) => {
+    await startCrawl(page, `${FIXTURE}/seo/`)
+    await waitForFinish(page)
+
+    // Switch to the SEO view (the label is the same in every locale).
+    await page.getByRole('radio', { name: 'SEO' }).click()
+
+    // Six pages were crawled: /seo/ and /seo/index.html are the same file at two
+    // URLs, plus no-title, dup-a, dup-b and thin.
+    await expect(page.getByText('已稽核页面').locator('..')).toContainText('6')
+
+    // Duplicates: the index pair (same file, two URLs) and the dup-a/dup-b pair.
+    await expect(page.getByText('重复标题').first()).toContainText('4')
+    await expect(page.getByText('缺少标题').first()).toContainText('1')
+    await expect(page.getByText('多个 H1').first()).toContainText('1')
+    await expect(page.getByText('禁止索引').first()).toContainText('1')
+
+    // Opening a page shows every check with its fix hint.
+    await page.getByText(`${FIXTURE}/seo/no-title.html`).first().click()
+    await expect(page.getByText('本页检查项')).toBeVisible()
+    await expect(page.getByText('标题标签存在')).toBeVisible()
+  })
+
+  test('adds SEO columns to the CSV export / CSV 含 SEO 欄位', async ({ page }) => {
+    await startCrawl(page, `${FIXTURE}/seo/`)
+    await waitForFinish(page)
+
+    const downloadPromise = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'CSV' }).click()
+    const csv = await readDownload(await downloadPromise)
+
+    expect(csv).toContain('seoScore')
+    expect(csv).toContain('seoTitleLength')
+    // Every cell is quoted: score then title length, e.g. `"81","37",`.
+    expect(csv).toMatch(/,"\d{1,3}","\d+",/)
+  })
+
+  test('checks a search ranking against a stubbed SERP / 以樁 SERP 檢查排名', async ({ page }) => {
+    await startCrawl(page, `${FIXTURE}/seo/`)
+    await waitForFinish(page)
+
+    // Intercept the SERP API so no real search engine is contacted.
+    await page.route('**/api/serp', async (route) => {
+      const body = route.request().postDataJSON() as { query: string }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          query: body.query,
+          engine: 'google',
+          provider: 'playwright',
+          rank: 5,
+          results: [
+            { position: 1, url: 'https://top.example.com/', title: 'Top', hostname: 'top.example.com' },
+          ],
+          competitors: [],
+        }),
+      })
+    })
+
+    // SEO view → SERP sub-tab.
+    await page.getByRole('radio', { name: 'SEO' }).click()
+    await page.getByRole('tab', { name: 'SERP 排名' }).click()
+
+    // A single query: the deliberate 20s interval never applies, so this is fast.
+    await page.getByLabel('每次查询数').fill('1')
+    await page.getByRole('button', { name: '查询排名' }).click()
+
+    // Our own site ranks #5 in the stubbed results.
+    await expect(page.getByText('第 5 名').first()).toBeVisible({ timeout: 30_000 })
+  })
 })

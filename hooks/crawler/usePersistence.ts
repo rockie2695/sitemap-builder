@@ -13,7 +13,7 @@
  * 另一個在有實質變化時防抖寫入。寫入刻意以精簡簽章為依賴，
  * 因為狀態每秒都在變（取樣計時器），我們不想每秒都寫 localStorage。
  */
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { Dispatch } from 'react'
 
 import { loadSnapshot, saveSnapshot } from '@/lib/persistence'
@@ -48,6 +48,9 @@ export function useCrawlerPersistence({
   restoreQueue,
   setPersistError,
 }: UseCrawlerPersistenceParams): void {
+  /** So the "SEO data was not persisted" notice is logged only once. */
+  const seoDroppedRef = useRef(false)
+
   // Compact signature: only these changes are worth persisting.
   const persistKey = useMemo(
     () =>
@@ -127,6 +130,16 @@ export function useCrawlerPersistence({
       })
 
       setPersistError(result.ok ? null : `本地保存失败（${result.reason}），刷新后将无法断点续爬`)
+
+      // Tell the user once when the SEO audit data had to be dropped for quota.
+      if (result.ok && result.seoDropped && !seoDroppedRef.current) {
+        seoDroppedRef.current = true
+        dispatch({
+          type: 'logs/add',
+          drafts: [{ level: 'warn', key: 'log.persist.seoDropped' }],
+          now: Date.now(),
+        })
+      }
     }, PERSIST_DEBOUNCE_MS)
 
     return () => clearTimeout(timer)

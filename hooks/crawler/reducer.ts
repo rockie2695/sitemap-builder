@@ -366,6 +366,7 @@ export function crawlReducer(state: CrawlState, action: CrawlAction): CrawlState
           finalUrl: response.finalUrl,
           redirected: isRedirected(action.url, response.finalUrl, state.options.stripQuery),
           lastModified: response.lastModified ?? null,
+          seo: response.seo ?? previous.seo,
           foundLinks: response.links.length,
           durationMs: response.durationMs,
           finishedAt: action.now,
@@ -470,6 +471,11 @@ export function crawlReducer(state: CrawlState, action: CrawlAction): CrawlState
             ? history.slice(history.length - HISTORY_LIMIT)
             : history,
       }
+    }
+
+    case 'logs/add': {
+      const { logs, logSeq } = withLogs(state.logs, state.logSeq, action.now, action.drafts)
+      return { ...state, logs, logSeq, now: action.now }
     }
 
     case 'logs/clear':

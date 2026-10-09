@@ -21,11 +21,13 @@ import { CurrentJobCard } from '@/components/dashboard/CurrentJobCard'
 import { DashboardHeader } from '@/components/dashboard/DashboardHeader'
 import { ExportBar } from '@/components/dashboard/ExportBar'
 import { LogPanel } from '@/components/dashboard/LogPanel'
+import { SeoTab } from '@/components/dashboard/SeoTab'
 import { StatsCards } from '@/components/dashboard/StatsCards'
 import { UrlList } from '@/components/dashboard/UrlList'
 import { ViewTabs, type ViewMode } from '@/components/dashboard/ViewTabs'
 import { useI18n } from '@/components/providers/LocaleProvider'
 import { useCrawler } from '@/hooks/crawler'
+import { useSerp } from '@/hooks/serp'
 import { useStoredState } from '@/hooks/useStoredState'
 import { shouldExcludeFromExport } from '@/lib/crawler/redirect'
 import { formatDuration } from '@/lib/stats'
@@ -42,6 +44,7 @@ export function SitemapBuilder() {
   const [viewMode, setViewMode] = useViewMode()
 
   const { stats, records, phase, options } = crawler
+  const serp = useSerp(records)
 
   /** Validate and start a task. */
   const handleStart = useCallback(() => {
@@ -58,8 +61,9 @@ export function SitemapBuilder() {
   /** Origin used for `<loc>` values inside a generated sitemapindex.xml. */
   const baseUrl = crawler.task?.origin ?? ''
 
-  const showUrlList = viewMode !== 'logs'
-  const showLogs = viewMode !== 'list'
+  const showSeo = viewMode === 'seo'
+  const showUrlList = viewMode === 'split' || viewMode === 'list'
+  const showLogs = viewMode === 'split' || viewMode === 'logs'
 
   return (
     <LazyMotion features={domAnimation}>
@@ -109,12 +113,15 @@ export function SitemapBuilder() {
             <ViewTabs value={viewMode} onChange={setViewMode} />
           </div>
 
+          {showSeo ? <SeoTab records={records} serp={serp} /> : null}
+
           <div
             className={
               viewMode === 'split'
                 ? 'grid gap-4 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]'
                 : 'grid gap-4'
             }
+            hidden={showSeo}
           >
             <AnimatePresence initial={false} mode="popLayout">
               {showUrlList ? (
@@ -154,6 +161,7 @@ export function SitemapBuilder() {
           onOptionsChange={crawler.setOptions}
           task={crawler.task}
           baseUrl={baseUrl}
+          serp={serp.results}
         />
       </main>
     </LazyMotion>

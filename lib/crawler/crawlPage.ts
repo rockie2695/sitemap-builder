@@ -11,7 +11,10 @@
 import type { Browser } from 'playwright'
 
 import { getBrowser as getSharedBrowser } from '@/lib/browser'
+import type { SeoSnapshot } from '@/types/seo'
+
 import { extractLinks } from './extractLinks'
+import { collectSeoFromDocument } from './seoDocument'
 import type { CrawlResponsePayload } from './schema'
 
 /** Input for a single page fetch. */
@@ -120,6 +123,21 @@ export async function crawlPage(
     }
 
     const extracted = await extractLinks(page, url, origin, pathPrefix, stripQuery)
+    // On-page SEO snapshot. Runs in the page context (see seoDocument.ts) and is
+    // best-effort: a failure must never fail the page. Playwright serializes the
+    // function and calls it with no argument, so its optional parameter defaults to
+    // the page's `document`; the cast only bridges Playwright's parameter typing.
+    const collectSeo = collectSeoFromDocument as unknown as () => SeoSnapshot
+    const seo = page.isClosed()
+      ? undefined
+      : await page.evaluate<SeoSnapshot>(collectSeo).catch((error: unknown) => {
+          // Best-effort: loud enough to diagnose, but the page still succeeds. A
+          // ReferenceError here means the collector picked up module-scope state,
+          // which `page.evaluate` cannot serialize.
+          // eslint-disable-next-line no-console
+          console.warn('[seo] collection failed:', error instanceof Error ? error.message : String(error))
+          return undefined
+        })
     const pageTitle = page.isClosed() ? null : await page.title().catch(() => null)
     const finalUrl = page.isClosed() ? url : page.url()
 
@@ -131,6 +149,7 @@ export async function crawlPage(
       pageTitle,
       httpStatus,
       lastModified,
+      seo,
       durationMs: since(startedAt),
     }
     if (navigationError) payload.error = navigationError

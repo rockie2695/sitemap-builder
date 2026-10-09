@@ -76,6 +76,51 @@ function writeFixtures() {
   writeFileSync(join(ROOT, 'redir', 'index.html'), page('redir root', '<a href="old.html">old</a>'))
   writeFileSync(join(ROOT, 'redir', 'new.html'), page('new page', '<a href="index.html">back</a>'))
 
+  // A directory with deliberate on-page SEO problems, used by the SEO audit test.
+  mkdirSync(join(ROOT, 'seo'), { recursive: true })
+  const filler = Array.from({ length: 30 }, () => 'widget workshop guide pricing maintenance delivery').join(' ')
+  const head = (title, description, extra = '') =>
+    '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+    (title ? '<title>' + title + '</title>' : '') +
+    (description ? '<meta name="description" content="' + description + '">' : '') +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">' + extra +
+    '</head><body>'
+  const body = (inner) => inner + '<p>' + filler + '</p></body></html>'
+
+  writeFileSync(
+    join(ROOT, 'seo', 'index.html'),
+    head(
+      'Widget workshop guide for small teams',
+      'A practical guide to choosing widgets for small workshops, covering pricing, delivery and maintenance.',
+    ) +
+      body(
+        '<h1>Widget workshop guide</h1>' +
+          '<a href="no-title.html">no title</a> <a href="dup-a.html">dup a</a> ' +
+          '<a href="dup-b.html">dup b</a> <a href="thin.html">thin</a>',
+      ),
+  )
+  writeFileSync(
+    join(ROOT, 'seo', 'no-title.html'),
+    head('', '') + body('<a href="index.html">back</a>'),
+  )
+  const duplicateTitle = 'Duplicate widget page title'
+  const duplicateDescription = 'This description is copied on more than one page of the site, which is exactly what the audit reports.'
+  writeFileSync(
+    join(ROOT, 'seo', 'dup-a.html'),
+    head(duplicateTitle, duplicateDescription) + body('<h1>Duplicate A</h1><a href="index.html">back</a>'),
+  )
+  writeFileSync(
+    join(ROOT, 'seo', 'dup-b.html'),
+    head(duplicateTitle, duplicateDescription) + body('<h1>Duplicate B</h1><a href="index.html">back</a>'),
+  )
+  writeFileSync(
+    join(ROOT, 'seo', 'thin.html'),
+    '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Thin page with two headings</title>' +
+      '<meta name="robots" content="noindex"></head><body>' +
+      '<h1>First heading</h1><h1>Second heading</h1><p>Short.</p><img src="/seo/pic.png">' +
+      '<a href="index.html">back</a></body></html>',
+  )
+
   // Non-ASCII paths, used by the readable-URL export test.
   mkdirSync(join(ROOT, 'zh'), { recursive: true })
   writeFileSync(join(ROOT, 'zh', 'index.html'), page('中文目录', '<a href="中文.html">中文页面</a>'))

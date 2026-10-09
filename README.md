@@ -15,6 +15,8 @@ The UI ships in **English, Traditional Chinese and Simplified Chinese** (switcha
 - [Quick Start](#quick-start)
 - [How the Crawl Works](#how-the-crawl-works)
 - [Options Reference](#options-reference)
+- [On-page SEO Audit](#on-page-seo-audit)
+- [SERP Rank & Competitor Comparison](#serp-rank--competitor-comparison)
 - [Feature Matrix](#feature-matrix)
 - [Crawl Rules](#crawl-rules)
 - [Optional Sitemap Fields](#optional-sitemap-fields)
@@ -181,7 +183,9 @@ export and error messages are translated too.
 | Exports | `sitemap.xml` (optional `lastmod`/`priority`/`changefreq`, split + `sitemapindex.xml`), `sitemap.csv`, `sitemap.json`, log txt; exclude-failed, **readable URLs**, **use final URL**, **host override**, ZIP bundling |
 | Resilience | A failed page never stops the crawl; retries; 5 consecutive failures auto-pause; the page budget auto-stops; Stop aborts in-flight requests |
 | Resume | Task snapshot in localStorage; a refresh offers to continue |
-| UI/UX | **Three locales (en / zh-Hant / zh-Hans)**, split/list/logs view tabs, light/dark theme, animated counters, skeleton loading, sticky export bar |
+| SEO audit | Per-page on-page checks with a 0–100 transparent score, fix hints, and a site-wide report (duplicates, missing meta, multiple H1, noindex, thin content, canonical mismatch) |
+| SERP rank | Opt-in ranking check per audited page (query derived from its H1/title), rank lookup, top-results list and side-by-side **competitor** on-page metrics; browser or paid backend; spacing + auto-pause when blocked |
+| UI/UX | **Three locales (en / zh-Hant / zh-Hans)**, split/list/logs/SEO view tabs, light/dark theme, animated counters, skeleton loading, sticky export bar |
 
 ---
 
@@ -253,6 +257,85 @@ sequential downloads when unsupported).
 
 ---
 
+## On-page SEO Audit
+
+Every page that is fetched successfully is audited automatically and shown in the **SEO**
+view tab. Nothing extra is requested from the server: the audit reads the DOM we already
+have, and scoring/reporting are pure client-side functions.
+
+**Collected per page** (`lib/crawler/seoDocument.ts`): title + length, meta description +
+length, `h1`/`h2`/`h3`, canonical, `meta robots` + indexability, `html lang`, viewport,
+Open Graph and Twitter tags, image count + missing `alt`, internal/external/nofollow link
+counts, word count (Latin words + CJK characters), JSON-LD `@type`s, `hreflang`, and the
+top keywords (Latin tokens plus CJK bigrams).
+
+**Score** (`lib/seo/score.ts`): 19 rules with fixed weights that sum to 100 — title 20,
+description 15, H1 10, canonical 10, robots 10, image alt 10, content 5, Open Graph 5,
+Twitter 5, structured data 5, lang + viewport 5. A `warn` earns half its weight and
+`info` rules are excluded from the denominator, so a page is only penalised for things
+that actually apply to it.
+
+**Site-wide report** (`lib/seo/report.ts`): duplicate titles, duplicate descriptions,
+missing title/description, multiple H1, blocked from indexing, thin content (<200 words)
+and canonical mismatches.
+
+**Exports**: CSV gains `seoScore`, `seoTitleLength`, `seoDescriptionLength`, `seoH1Count`,
+`seoImagesMissingAlt`, `seoWordCount`, `seoIndexable`; JSON gains `seoScore` alongside the
+full `seo` snapshot.
+
+> **Disclaimer**: the score is **our own transparent checklist**, not a Google metric —
+> it does not predict ranking, and it does not include PageRank (which no longer has a
+> public API).
+
+**Storage**: SEO snapshots are the bulkiest field in a resume snapshot, so the save is
+size-aware — if the payload would exceed ~3 MB, the snapshot is written **without** the
+SEO data and a warning is added to the log.
+
+---
+
+## SERP Rank & Competitor Comparison
+
+**This feature is off by default, and it is the one part of the app that can get you
+blocked.** Both Google and Bing block automated browsing, and their official search APIs
+are gone (Bing Web Search retired in Aug 2025; the Google Custom Search JSON API is
+closed to new customers). Read the in-app disclaimer before using it.
+
+Switch to the **SEO** view and open the **SERP rank** sub-tab.
+
+**Queries** (`lib/serp/queries.ts`): one per audited page, taken from its `H1` (the
+cleanest topic statement) or its title, de-duplicated and ordered **worst-SEO-score
+first** so the pages you actually want to fix are checked first. A run is capped
+(default 20, adjustable 1–100).
+
+**Running** (`hooks/serp/*`): a client-side queue, one query at a time, with a **minimum
+20 s interval**. The run is resumable — a page that already has a stored result is
+skipped, so resuming after a block continues where it left off. Results live under their
+own `localStorage` key, separate from the crawl snapshot.
+
+**Reading the SERP** (`lib/serp/extract.ts`, `lib/serp/provider.ts`):
+
+- `playwright` (default) opens the real search page in the shared Chromium and extracts
+  organic results with a permissive heuristic (DOM order; engine hosts, ads and
+  `/url?q=` wrappers filtered; duplicates dropped). A consent/CAPTCHA page is detected
+  and reported as a typed `blocked` error, which **auto-pauses** the run.
+- `serpapi` uses the paid JSON API when `SERPAPI_KEY` is set. Provider `auto` prefers it
+  automatically when the key is present.
+
+**Competitor comparison**: for each query, the top N (default 2, max 5) non-owned results
+are fetched and analysed with the **same** on-page extractor as your own crawl
+(`lib/serp/competitor.ts`), so title length, description length, H1 count, word count and
+structured data line up apples-to-apples.
+
+**Exports**: CSV gains `serpQuery`, `serpRank`, `serpTopHost`, `serpCompetitors`; JSON
+embeds the full `serp` record per page.
+
+> **Compliance & reliability**: reading search pages may violate the engines' terms of
+> service — the spacing and the enable switch exist for that reason. Expect intermittent
+> blocks; use the paid backend for stable results. As with the audit, the rank is a
+> snapshot of current results, not a Google metric.
+
+---
+
 ## Project Structure
 
 ```text
@@ -260,7 +343,8 @@ app/
 ├── layout.tsx                  # Root layout (zh-CN, TooltipProvider)
 ├── page.tsx                    # Renders <SitemapBuilder />
 ├── globals.css                 # Tailwind v4 entry + shadcn theme variables
-└── api/crawl/route.ts          # Thin adapter: zod validation → SSRF → crawlPage()
+├── api/crawl/route.ts          # Thin adapter: zod validation → SSRF → crawlPage()
+└── api/serp/route.ts           # Thin adapter: zod validation → fetchSerp()
 components/
 ├── ui/                         # shadcn/ui primitives (button, card, select, …)
 └── dashboard/
@@ -272,7 +356,9 @@ components/
     ├── CurrentJobCard.tsx      # Current URL + stage stepper + stacked progress
     ├── ProgressBar.tsx         # Reusable stacked progress bar
     ├── ChartsPanel.tsx         # Radial gauge + trend area chart
-    ├── ViewTabs.tsx            # Split / list / logs view switch
+    ├── ViewTabs.tsx            # Split / list / logs / SEO view switch
+    ├── SeoTab.tsx              # SEO view: on-page audit + SERP sub-tabs
+    ├── SerpPanel.tsx           # Ranking check + competitor comparison
     ├── UrlList.tsx             # Virtual-scrolled URL table
     ├── LogPanel.tsx            # Virtual-scrolled live log
     ├── ExportBar.tsx           # Download buttons + field/split switches
@@ -286,6 +372,11 @@ hooks/
 │   ├── engine.ts               # Queue + crawl loop (owns the FIFO)
 │   ├── request.ts              # /api/crawl HTTP layer + partial-success rules
 │   └── usePersistence.ts       # Snapshot save/restore effects
+├── serp/
+│   ├── index.ts                # useSerp(): queue, options, persistence
+│   ├── constants.ts            # Defaults + SERP limits
+│   ├── engine.ts               # Spaced queue loop (React-free)
+│   └── request.ts              # /api/serp HTTP layer
 ├── useVirtualWindow.ts         # Ref-free virtual scrolling
 ├── useStoredState.ts           # useState backed by localStorage
 └── useTheme.ts                 # Light/dark switching
@@ -293,7 +384,19 @@ lib/
 ├── crawler/
 │   ├── crawlPage.ts            # Server-side page fetch (injectable browser)
 │   ├── extractLinks.ts         # Link extraction and scoping
+│   ├── seoDocument.ts          # Per-page SEO extraction (self-contained)
 │   └── schema.ts               # zod schemas for the API contract
+├── seo/
+│   ├── score.ts                # Transparent 0–100 scoring
+│   ├── report.ts               # Site-wide findings
+│   └── labels.ts               # i18n key maps + score styling
+├── serp/
+│   ├── extract.ts              # In-page SERP extraction + block detection
+│   ├── rank.ts                 # Host normalization + rank lookup
+│   ├── queries.ts              # Query derivation from the archive
+│   ├── provider.ts             # Playwright / SerpAPI backends
+│   ├── competitor.ts           # Competitor on-page analysis
+│   └── schema.ts               # zod schemas for /api/serp
 ├── sitemap/
 │   ├── index.ts                # Public surface
 │   ├── constants.ts            # sitemaps.org limits
@@ -317,7 +420,10 @@ lib/
 ├── persistence.ts              # localStorage snapshots
 ├── virtual.ts                  # Virtual-scroll pure helpers
 └── utils.ts                    # cn()
-types/crawl.ts                  # Domain types (client + server)
+types/
+├── crawl.ts                    # Domain types (client + server)
+├── seo.ts                      # On-page audit types
+└── serp.ts                     # SERP / ranking types
 ```
 
 ---
@@ -329,12 +435,14 @@ types/crawl.ts                  # Domain types (client + server)
 | `ALLOW_PRIVATE_TARGETS` | unset | `1`/`true` allows localhost, private IPs and `169.254.x.x`. **Off by default**: the API fetches arbitrary URLs on behalf of visitors, so without it the app is an SSRF hazard |
 | `CHROMIUM_EXECUTABLE_PATH` | unset | Path to a Chromium binary. On Vercel, feed it `@sparticuz/chromium`'s `executablePath()` |
 | `BROWSERLESS_WS_ENDPOINT` | unset | When set, the app connects to a cloud browser via `chromium.connectOverCDP()` instead of launching one |
+| `SERPAPI_KEY` | unset | Enables the paid SERP backend. When set, the SERP **provider = auto** uses [SerpAPI](https://serpapi.com) instead of scraping Google/Bing. Without it, only the (blockable) browser backend is available |
 
 ```bash
 # .env.local
 ALLOW_PRIVATE_TARGETS=1
 # CHROMIUM_EXECUTABLE_PATH=/tmp/chromium
 # BROWSERLESS_WS_ENDPOINT=wss://xxx.browserless.io/?token=yyy
+# SERPAPI_KEY=your_serpapi_key
 ```
 
 ---
@@ -464,6 +572,12 @@ npm run e2e       # Playwright: real Chromium (builds first)
 | Unit | `tests/unit/url-display.test.ts` | host override, readable decoding, final-URL selection |
 | Unit | `tests/unit/stats.test.ts` | Derived counters, throughput, **ETA**, formatting |
 | Unit | `tests/unit/charts.test.ts` | Y-axis width ladder and axis number formatting |
+| Unit | `tests/unit/seo-document.test.ts` | Per-page extraction from parsed HTML (metadata, headings, links, keywords, caps) |
+| Unit | `tests/unit/seo-score.test.ts` | Rule evaluation, weights, scoring and the site-wide report |
+| Unit | `tests/unit/serp-extract.test.ts` | Organic-result extraction, ad/engine filtering, block detection, search URLs |
+| Unit | `tests/unit/serp-rank.test.ts` | Host normalization, rank lookup, dedup, competitor picking |
+| Unit | `tests/unit/serp-queries.test.ts` | H1/title/keyword derivation, dedup, worst-first ordering, caps |
+| Unit | `tests/unit/serp-engine.test.ts` | Spaced queue loop: interval, recoverable vs fatal errors, pause, abort |
 | Unit | `tests/unit/i18n.test.ts` | Dictionary parity, interpolation, log formatting, locale detection |
 | Unit | `tests/unit/export.test.ts` | CSV (BOM, quoting), JSON, log text |
 | Unit | `tests/unit/zip.test.ts` | ZIP structure verified by inflating with `inflateRawSync` |
@@ -471,8 +585,9 @@ npm run e2e       # Playwright: real Chromium (builds first)
 | State machine | `tests/unit/crawl-reducer.test.ts` | Full lifecycle, 404→failed, auto-pause, stop settling |
 | Engine | `tests/unit/crawl-engine.test.ts` | BFS order, dedup, slash alias, page budget, pause flag, **retries, concurrency, redirect dedup** (fake HTTP + clock) |
 | API | `tests/api/crawl-route.test.ts` | zod 400s, SSRF 400, 200/206/502 mapping (mocked browser) |
-| Components | `tests/components/*.test.tsx` | ControlPanel, UrlList, LogPanel, ExportBar, ViewTabs (wrapped in `LocaleProvider`) |
-| E2E | `tests/e2e/crawl.spec.ts` | Real crawl, lastmod branches, priority strategy, retry, concurrency, pause/resume/stop, language switch, host override, readable URLs, chart period |
+| API | `tests/api/serp-route.test.ts` | zod 400s, 200 payload, blocked→502, no-key→400 (mocked provider) |
+| Components | `tests/components/*.test.tsx` | ControlPanel, UrlList, LogPanel, ExportBar, ViewTabs, SeoTab, SerpPanel (wrapped in `LocaleProvider`) |
+| E2E | `tests/e2e/crawl.spec.ts` | Real crawl, lastmod branches, priority strategy, retry, concurrency, pause/resume/stop, language switch, host override, readable URLs, chart period, redirect exclusion, **SEO audit + CSV columns**, **SERP rank (stubbed API)** |
 
 Two things worth knowing about the test setup:
 
@@ -542,6 +657,9 @@ node --check chunk.js   # exit 0 = valid
 - The trend chart keeps one sample per second up to 1 hour; a longer crawl drops the oldest samples
 - Authenticated pages (cookies / Basic Auth / logins) are not supported
 - Resume-after-refresh is bounded by the localStorage quota; split very large tasks
+- The SEO score is a heuristic checklist, not a ranking signal; PageRank has no public API
+- SERP ranking is **opt-in and best-effort**: search engines block automated browsing, so the browser backend fails intermittently (detected and auto-paused) and the extracted results depend on markup that changes often; the paid SerpAPI backend is the reliable path
+- SERP queries are derived heuristically (H1/title), spaced ≥20 s apart, capped per run, and resumable; a rank is a single engine's snapshot for one query, not a rank-tracking time series
 - TypeScript is pinned to **5.9**: the native `typescript@7` compiler is not yet supported by typescript-eslint and breaks `npm run lint`
 
 ---

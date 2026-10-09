@@ -11,8 +11,11 @@
 import { changefreqForDepth, resolveLastmod } from '@/lib/sitemap'
 import type { SitemapExportOptions } from '@/lib/sitemap/entries'
 import { resolvePriority } from '@/lib/sitemap/priority'
+import { buildSeoReport } from '@/lib/seo/report'
+import { contextFromReport, scorePage } from '@/lib/seo/score'
 import { displayUrl } from '@/lib/sitemap/url-display'
 import type { UrlRecord } from '@/types/crawl'
+import type { SerpRecord } from '@/types/serp'
 
 /** Column headers, in output order. */
 const CSV_HEADER = [
@@ -29,6 +32,17 @@ const CSV_HEADER = [
   'lastModifiedHeader',
   'suggestedPriority',
   'suggestedChangefreq',
+  'seoScore',
+  'seoTitleLength',
+  'seoDescriptionLength',
+  'seoH1Count',
+  'seoImagesMissingAlt',
+  'seoWordCount',
+  'seoIndexable',
+  'serpQuery',
+  'serpRank',
+  'serpTopHost',
+  'serpCompetitors',
   'error',
 ] as const
 
@@ -52,11 +66,18 @@ function pathDepthColumn(url: string): number {
  *
  * @param records Archive in discovery order.
  * @param options Field switches plus the URL/priority strategy context.
+ * @param serp    Optional SERP records keyed by page URL (adds ranking columns).
  * @returns CSV text including the BOM and CRLF line endings.
  */
-export function buildCsv(records: readonly UrlRecord[], options: SitemapExportOptions): string {
+export function buildCsv(
+  records: readonly UrlRecord[],
+  options: SitemapExportOptions,
+  serp: Readonly<Record<string, SerpRecord>> = {},
+): string {
   const lines = [CSV_HEADER.map(csvCell).join(',')]
   const priorityContext = { strategy: options.priorityStrategy, pathPrefix: options.pathPrefix }
+  // SEO columns need the site-wide duplicate sets, so the report is built here.
+  const seoContext = contextFromReport(buildSeoReport(records))
 
   for (const record of records) {
     lines.push(
@@ -74,6 +95,17 @@ export function buildCsv(records: readonly UrlRecord[], options: SitemapExportOp
         record.lastModified ?? '',
         resolvePriority(record, priorityContext).toFixed(1),
         changefreqForDepth(record.depth),
+        scorePage(record, seoContext).score ?? '',
+        record.seo?.titleLength ?? '',
+        record.seo?.metaDescriptionLength ?? '',
+        record.seo?.h1.length ?? '',
+        record.seo?.images.missingAlt ?? '',
+        record.seo?.wordCount ?? '',
+        record.seo === undefined ? '' : record.seo.indexable ? 'true' : 'false',
+        serp[record.url]?.query ?? '',
+        serp[record.url]?.rank ?? '',
+        serp[record.url]?.results[0]?.hostname ?? '',
+        serp[record.url]?.competitors.length ?? '',
         record.error ?? '',
       ]
         .map(csvCell)
