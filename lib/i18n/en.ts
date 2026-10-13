@@ -260,6 +260,13 @@ export const en: Dictionary = {
   'seo.col.keywords': 'Keywords',
   'seo.tab.audit': 'Audit',
   'seo.tab.serp': 'SERP rank',
+  'urls.source': 'Source',
+  'seo.checksValueHint':
+    'The number in brackets is what the check measured: lengths are characters, images are missing-alt / total, Open Graph is set / 3, Twitter is set / 4, content is words, H1 and structured data are counts.',
+  'seo.fact.links': 'Links (internal / external / nofollow)',
+  'seo.fact.keywords': 'Keywords (occurrences)',
+  'serp.rankHint':
+    'Rank is the position in the search results (1 = first) and is unrelated to the audit score. The queue is ordered worst-score first.',
   'serp.title': 'Search ranking (SERP)',
   'serp.disclaimer':
     'Opt-in. Reading search pages may violate Google/Bing terms and is frequently blocked, so queries are spaced by a fixed interval. Prefer a paid provider (SERPAPI_KEY) for reliability. This compares your pages against the current top results — it is not a Google metric.',
@@ -294,7 +301,7 @@ export const en: Dictionary = {
   'serp.rank.value': '#{rank}',
   'serp.fatal.title': 'Run stopped',
   'serp.fatal.blocked':
-    'The search engine served a block page (CAPTCHA / consent). Wait a while, lower the query count, or switch to a paid provider.',
+    'The search engine served a block page (CAPTCHA / consent). Wait a while, lower the query count, switch to a paid provider (SERPAPI_KEY), or route through a cloud browser (BROWSERLESS_WS_ENDPOINT).',
   'serp.fatal.noKey': 'No SERPAPI_KEY is configured on the server; the paid provider is unavailable.',
   'serp.fatal.network': 'Network error while reading the search page.',
   'serp.fatal.empty': 'No organic results could be extracted (the engine markup may have changed).',
@@ -317,7 +324,38 @@ export const en: Dictionary = {
   'serp.status.stopped': 'Stopped',
   'serp.status.done': 'Done',
   'serp.costWarning': 'Each query reads one search page and optionally fetches {n} competitor page(s).',
-  'serp.notAuditedHint': 'Only audited pages (with an SEO snapshot) become queries.',
+  'serp.notAuditedHint': 'Only successfully loaded pages (with an SEO snapshot, not 404/5xx) become queries.',
+  'serp.listHint':
+    'Every audited page is listed (one row per page). Each run fetches at most the set number of distinct queries, so a large site is covered over several runs.',
+  'seo.ga4.title': 'GA4 traffic',
+  'seo.ga4.hint':
+    'Optional. Needs a Google service account on the server: GA4_PROPERTY_ID and GOOGLE_APPLICATION_CREDENTIALS.',
+  'seo.ga4.load': 'Load traffic',
+  'seo.ga4.loading': 'Loading…',
+  'seo.ga4.clear': 'Clear traffic',
+  'seo.ga4.loaded': '{count} paths · {views} views',
+  'seo.ga4.noCredentials':
+    'The server has no GA4 credentials (GA4_PROPERTY_ID / GOOGLE_APPLICATION_CREDENTIALS).',
+  'seo.ga4.error': 'GA4 failed: {message}',
+  'seo.col.traffic': 'Views',
+  'seo.highTrafficLowScore': 'High traffic, low score',
+  'seo.opportunities': 'Opportunities',
+  'seo.ai.title': 'AI rewrite suggestions',
+  'seo.ai.generate': 'Suggest',
+  'seo.ai.regenerate': 'Regenerate',
+  'seo.ai.working': 'Generating…',
+  'seo.ai.baseUrl': 'Model base URL',
+  'seo.ai.baseUrlPlaceholder': 'http://localhost:11434/v1',
+  'seo.ai.model': 'Model',
+  'seo.ai.modelPlaceholder': 'llama3.1',
+  'seo.ai.hint':
+    'Any OpenAI-compatible endpoint (Ollama, vLLM, OpenAI). The API key stays on the server (LLM_API_KEY).',
+  'seo.ai.resultTitle': 'Suggested title',
+  'seo.ai.resultDescription': 'Suggested description',
+  'seo.ai.notes': 'Notes',
+  'seo.ai.noConfig':
+    'Set the model base URL and model first (or LLM_BASE_URL / LLM_MODEL on the server).',
+  'seo.ai.error': 'Suggestion failed: {message}',
   'changefreq.auto': 'Auto by depth',
 
   'error.invalidUrl': 'Not a valid absolute http(s) URL',

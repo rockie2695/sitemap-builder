@@ -17,6 +17,8 @@
 import type { Page } from 'playwright'
 
 import { getBrowser } from '@/lib/browser'
+import { resolveVisionConfig } from '@/lib/llm/openai'
+import { readSerpFromScreenshot } from '@/lib/llm/vision'
 import type { SerpCompetitor, SerpEngine, SerpErrorCode, SerpProviderId, SerpResult } from '@/types/serp'
 import { SERP_RESULT_LIMIT } from '@/types/serp'
 
@@ -24,9 +26,49 @@ import { analyzeCompetitorPage } from './competitor'
 import { buildSerpUrl, collectSerpResults, detectSerpBlock } from './extract'
 import { dedupeResults, findRank, pickCompetitors } from './rank'
 
+/** Hostname of a URL, or an empty string when it is unparseable. */
+function safeHostname(url: string): string {
+  try {
+    return new URL(url).hostname
+  } catch {
+    return ''
+  }
+}
+
 /** A normal Chrome UA: search pages refuse unknown agents. */
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+
+/**
+ * Injected before any page script: mask the most common headless-automation tells that
+ * trigger consent/CAPTCHA walls. Best-effort — the IP reputation matters more.
+ *
+ * 在任何頁面指令碼之前注入：遮蔽最常見的無頭自動化特徵（會觸發同意／CAPTCHA 畫面）。
+ * 只是盡力而為——IP 信譽的影響更大。
+ */
+const STEALTH_SCRIPT = `
+Object.defineProperty(navigator, 'webdriver', { get: () => false });
+if (!window.chrome) { window.chrome = {}; }
+if (!window.chrome.runtime) { window.chrome.runtime = {}; }
+Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+`
+
+/**
+ * Google consent cookies: pre-accepting the consent screen avoids the "Before you
+ * continue" wall that otherwise looks like a block. Best-effort.
+ *
+ * Google 同意 cookie：預先同意可避開「Before you continue」同意畫面（否則看起來像被封鎖）。
+ */
+const GOOGLE_CONSENT_COOKIES = [
+  {
+    name: 'SOCS',
+    value: 'CAISNQgQEitib3FfaWRlbnRpdHlmcm9udGVuZHVpc2VydmVyXzIwMjMxMTE1LjA4X3AwGgJlbiACGgYIgLC_pwY',
+    domain: '.google.com',
+    path: '/',
+  },
+  { name: 'CONSENT', value: 'YES+cb.20230101-00-p0.en+FX+000', domain: '.google.com', path: '/' },
+]
 
 /** Navigation timeout for a search page. */
 const NAV_TIMEOUT = 20_000
@@ -114,7 +156,16 @@ async function fetchFromPlaywright(options: FetchSerpOptions): Promise<SerpResul
       userAgent: USER_AGENT,
       viewport: { width: 1365, height: 900 },
       locale: options.locale === 'zh' ? 'zh-CN' : 'en-US',
+      timezoneId: 'America/New_York',
     })
+    // Stealth: mask automation signals and pre-accept the consent screen (best-effort).
+    await context.addInitScript({ content: STEALTH_SCRIPT })
+    await context.setExtraHTTPHeaders({
+      'Accept-Language': options.locale === 'zh' ? 'zh-CN,zh;q=0.9,en;q=0.8' : 'en-US,en;q=0.9',
+    })
+    if (options.engine === 'google') {
+      await context.addCookies(GOOGLE_CONSENT_COOKIES).catch(() => undefined)
+    }
     page = await context.newPage()
     page.setDefaultNavigationTimeout(NAV_TIMEOUT)
 
@@ -136,7 +187,34 @@ async function fetchFromPlaywright(options: FetchSerpOptions): Promise<SerpResul
     }
 
     const collect = collectSerpResults as unknown as () => SerpResult[]
-    return await page.evaluate<SerpResult[]>(collect)
+    const results = await page.evaluate<SerpResult[]>(collect)
+    if (results.length > 0) return results
+
+    // Nothing parsed: the markup may have changed. Optional vision fallback (opt-in via
+    // LLM_BASE_URL + LLM_VISION_MODEL) reads the screenshot instead.
+    const vision = resolveVisionConfig()
+    if (vision) {
+      try {
+        const shot = await page.screenshot({ type: 'png' })
+        const entries = await readSerpFromScreenshot(
+          vision,
+          Buffer.from(shot).toString('base64'),
+          options.signal,
+        )
+        if (entries.length > 0) {
+          return entries.map((entry, index) => ({
+            position: entry.position || index + 1,
+            url: entry.url,
+            title: entry.title,
+            hostname: safeHostname(entry.url),
+          }))
+        }
+      } catch {
+        // Fall through to the `empty` error below.
+      }
+    }
+
+    return results
   } catch (error) {
     if (error instanceof SerpError) throw error
     throw new SerpError('network', error instanceof Error ? error.message.split('\n')[0] : String(error))

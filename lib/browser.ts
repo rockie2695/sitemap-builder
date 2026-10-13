@@ -28,6 +28,8 @@ const LAUNCH_ARGS = [
   '--disable-setuid-sandbox',
   '--disable-dev-shm-usage',
   '--disable-gpu',
+  // Drop the most common automation tell (helps the free SERP path; harmless for crawl).
+  '--disable-blink-features=AutomationControlled',
 ]
 
 /**

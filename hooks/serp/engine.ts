@@ -43,6 +43,8 @@ export interface SerpEngineDeps {
   shouldPause: () => boolean
   /** Abort handle (stop / unmount). */
   signal: AbortSignal
+  /** Records already known, keyed by query text (seeds cross-page reuse). */
+  reuse?: ReadonlyMap<string, SerpRecord>
   /** Delay helper, injectable for tests. */
   sleep?: (ms: number) => Promise<void>
   /** Clock, injectable for deterministic tests. */
@@ -62,6 +64,10 @@ export async function runSerpQueue(deps: SerpEngineDeps): Promise<void> {
 
   deps.onStart(deps.queries.length)
 
+  // Records already fetched (a repeated query is looked up once and reused).
+  const known = new Map<string, SerpRecord>(deps.reuse ?? [])
+  const budget = Math.max(1, options.maxQueries)
+  let fetched = 0
   let lastAt = 0
   let hasRun = false
 
@@ -73,6 +79,17 @@ export async function runSerpQueue(deps: SerpEngineDeps): Promise<void> {
       await sleep(SERP_PAUSE_POLL_MS)
     }
     if (signal.aborted) return
+
+    // A query already fetched (this run, or a prior one seeded via `reuse`): reuse the
+    // record instead of hitting the engine again.
+    const existing = known.get(entry.query)
+    if (existing) {
+      deps.onResult(entry, existing)
+      continue
+    }
+
+    // Per-run budget counts **real** lookups; the rest stay pending for the next run.
+    if (fetched >= budget) break
 
     // Minimum interval between queries (the first one runs immediately).
     if (hasRun) {
@@ -106,15 +123,18 @@ export async function runSerpQueue(deps: SerpEngineDeps): Promise<void> {
       continue
     }
 
-    deps.onResult(entry, {
-      query: response.query,
+    const record: SerpRecord = {
+      query: entry.query,
       engine: response.engine,
       provider: response.provider,
       checkedAt: now(),
       rank: response.rank,
       results: response.results,
       competitors: response.competitors,
-    })
+    }
+    known.set(entry.query, record)
+    fetched += 1
+    deps.onResult(entry, record)
   }
 
   if (!signal.aborted) deps.onDone()

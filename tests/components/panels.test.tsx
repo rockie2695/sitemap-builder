@@ -65,6 +65,24 @@ describe('UrlList', () => {
     expect(screen.getByText('Done')).toBeInTheDocument()
   })
 
+  it('shows where a failed link was found / 失敗連結顯示來源網址', () => {
+    renderWithI18n(
+      <UrlList
+        records={[
+          record('https://example.com/missing', {
+            status: 'failed',
+            httpStatus: 404,
+            discoveredFrom: 'https://example.com/a',
+          }),
+        ]}
+      />,
+    )
+    // The failed row renders its source page as a link.
+    expect(
+      screen.getByRole('link', { name: 'Source: https://example.com/a' }),
+    ).toBeInTheDocument()
+  })
+
   it('filters by search keyword / 依關鍵字篩選', async () => {
     const user = userEvent.setup()
     renderWithI18n(

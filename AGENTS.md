@@ -48,6 +48,10 @@ npm run dev         # dev server; only ONE dev instance per project is allowed (
 | `lib/seo/*` | SEO scoring, site-wide report and i18n key mapping (pure) |
 | `lib/serp/*` | SERP extraction/providers, rank lookup, query derivation, competitor analysis (opt-in) |
 | `hooks/serp/*` | `useSerp()`: spaced, resumable ranking queue + its own persistence key |
+| `lib/analytics/*` | GA4 Data API client (service-account JWT, zero-dep) + schemas |
+| `lib/llm/*` | OpenAI-compatible chat client, SEO suggestions, SERP vision fallback |
+| `hooks/useAnalytics.ts` | GA4 traffic overlay (fetch + localStorage cache) |
+| `hooks/useLlmConfig.ts` | Client-visible LLM endpoint (base URL + model; key stays server-side) |
 | `lib/export/*` | CSV/JSON/log/ZIP + browser downloads |
 | `lib/i18n/*` | Three-locale dictionaries (type-checked) + runtime |
 | `components/providers/LocaleProvider.tsx` | Locale state `useI18n()` — wrap anything using UI copy |
@@ -110,6 +114,14 @@ npm run dev         # dev server; only ONE dev instance per project is allowed (
 18. **SERP records live under their own localStorage key**, separate from the crawl
     snapshot, and competitor analysis reuses `collectSeoFromDocument` so the comparison
     stays apples-to-apples. SERP 結果自己一個儲存鍵；競品分析共用 SEO 採集器。
+19. **GA4 credentials are server-side only** (`GA4_PROPERTY_ID` +
+    `GOOGLE_APPLICATION_CREDENTIALS`); the client sends paths, never keys. The client is
+    **zero-dependency** (`node:crypto` JWT), and error→code mapping lives in
+    `ga4ErrorCode()` (shape-tolerant). GA4 憑證只在伺服器端；客戶端零相依；錯誤碼映射集中。
+20. **The LLM API key is server-side only** (`LLM_API_KEY`) and never echoed to the
+    browser; the client speaks the OpenAI-compatible `/chat/completions` protocol with no
+    vendor SDK. The SERP vision fallback is **opt-in** (`LLM_VISION_MODEL`) and only runs
+    when DOM extraction returns nothing. LLM 金鑰只在伺服器端；視覺備援為選用。
 
 ## Option behaviour notes / 選項行為備註
 

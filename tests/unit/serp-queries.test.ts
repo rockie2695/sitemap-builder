@@ -74,12 +74,13 @@ describe('deriveQueries / 推導查詢', () => {
     expect(queries[0].query).toBe('sitemaps')
   })
 
-  it('de-duplicates case-insensitively / 不分大小寫去重', () => {
+  it('keeps one row per page even for identical queries / 相同查詢仍每頁一列', () => {
     const queries = deriveQueries([
       record('https://example.com/a', snapshot({ h1: ['Widget Guide'] })),
-      record('https://example.com/b', snapshot({ h1: ['widget guide'] })),
+      record('https://example.com/b', snapshot({ h1: ['Widget Guide'] })),
     ])
-    expect(queries).toHaveLength(1)
+    expect(queries).toHaveLength(2)
+    expect(queries.map((entry) => entry.query)).toEqual(['Widget Guide', 'Widget Guide'])
   })
 
   it('orders the worst SEO score first / 分數最低者優先', () => {
@@ -106,12 +107,22 @@ describe('deriveQueries / 推導查詢', () => {
       record('https://example.com/b', snapshot({ h1: ['Beta topic'] })),
       record('https://example.com/c', snapshot({ h1: ['Charlie topic'] })),
     ]
-    const queries = deriveQueries(records, { maxQueries: 2 })
+    const queries = deriveQueries(records, { limit: 2 })
     expect(queries).toHaveLength(2)
     expect(queries.every((entry) => entry.query !== 'none')).toBe(true)
   })
 
   it('skips pages whose only signal is too short / 訊號過短則略過', () => {
     expect(deriveQueries([record('https://example.com/a', snapshot({ h1: ['x'], title: null }))])).toEqual([])
+  })
+
+  it('skips failed pages such as 404 / 略過 404 等失敗頁面', () => {
+    const failed: UrlRecord = {
+      ...record('https://example.com/missing', snapshot({ h1: ['Gone Page'] })),
+      status: 'failed',
+      httpStatus: 404,
+    }
+    const queries = deriveQueries([failed, record('https://example.com/ok', snapshot({ h1: ['OK Page'] }))])
+    expect(queries.map((entry) => entry.query)).toEqual(['OK Page'])
   })
 })

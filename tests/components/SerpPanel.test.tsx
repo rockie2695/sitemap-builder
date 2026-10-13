@@ -104,6 +104,8 @@ describe('SerpPanel', () => {
     expect(screen.getByText('widget guide')).toBeInTheDocument()
     expect(screen.getByText('#4')).toBeInTheDocument()
     expect(screen.getByText('top.com')).toBeInTheDocument()
+    // Each row also shows the source page URL, so it maps to the audit table.
+    expect(screen.getByText(URL)).toBeInTheDocument()
   })
 
   it('opens the detail with competitor comparison / 開啟詳情並顯示競品比較', async () => {
@@ -123,6 +125,16 @@ describe('SerpPanel', () => {
     expect(screen.getByText('Top organic results')).toBeInTheDocument()
     expect(screen.getByText('Top competitors')).toBeInTheDocument()
     expect(screen.getByText(/Article/)).toBeInTheDocument()
+  })
+
+  it('virtualises a long queue / 長佇列只渲染視窗', () => {
+    const queries = Array.from({ length: 300 }, (_, index) => ({
+      query: `query ${index}`,
+      url: `https://example.com/p${index}`,
+    }))
+    renderWithI18n(<SerpPanel records={[record()]} serp={createSerpStub({ queries })} />)
+    expect(screen.getByText('query 0')).toBeInTheDocument()
+    expect(screen.queryByText('query 299')).not.toBeInTheDocument()
   })
 
   it('surfaces a fatal block with a resume affordance / 顯示致命封鎖與恢復按鈕', async () => {

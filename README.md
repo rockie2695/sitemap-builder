@@ -17,6 +17,8 @@ The UI ships in **English, Traditional Chinese and Simplified Chinese** (switcha
 - [Options Reference](#options-reference)
 - [On-page SEO Audit](#on-page-seo-audit)
 - [SERP Rank & Competitor Comparison](#serp-rank--competitor-comparison)
+- [GA4 Traffic Overlay](#ga4-traffic-overlay)
+- [AI Rewrite Suggestions (LLM)](#ai-rewrite-suggestions-llm)
 - [Feature Matrix](#feature-matrix)
 - [Crawl Rules](#crawl-rules)
 - [Optional Sitemap Fields](#optional-sitemap-fields)
@@ -185,6 +187,8 @@ export and error messages are translated too.
 | Resume | Task snapshot in localStorage; a refresh offers to continue |
 | SEO audit | Per-page on-page checks with a 0–100 transparent score, fix hints, and a site-wide report (duplicates, missing meta, multiple H1, noindex, thin content, canonical mismatch) |
 | SERP rank | Opt-in ranking check per audited page (query derived from its H1/title), rank lookup, top-results list and side-by-side **competitor** on-page metrics; browser or paid backend; spacing + auto-pause when blocked |
+| GA4 traffic | Optional page-view/session overlay (service account), a **Views** column and a **high-traffic, low-score** prioritisation |
+| AI suggestions | Optional per-page `<title>`/description rewrite via any OpenAI-compatible model; server-side key; optional screenshot fallback for unparseable SERPs |
 | UI/UX | **Three locales (en / zh-Hant / zh-Hans)**, split/list/logs/SEO view tabs, light/dark theme, animated counters, skeleton loading, sticky export bar |
 
 ---
@@ -302,10 +306,13 @@ closed to new customers). Read the in-app disclaimer before using it.
 
 Switch to the **SEO** view and open the **SERP rank** sub-tab.
 
-**Queries** (`lib/serp/queries.ts`): one per audited page, taken from its `H1` (the
-cleanest topic statement) or its title, de-duplicated and ordered **worst-SEO-score
-first** so the pages you actually want to fix are checked first. A run is capped
-(default 20, adjustable 1–100).
+**Queries** (`lib/serp/queries.ts`): **one row per successfully-crawled page**, taken from
+its `H1` (the cleanest topic statement) or its title, ordered **worst-SEO-score first** so
+the pages you actually want to fix come first. Failed pages (404/5xx and transport errors)
+are skipped. The list mirrors the audit — pages are not collapsed — and identical queries
+are de-duplicated at **run** time: a repeated query is fetched once and its result reused
+for every page that shares it. Each run fetches at most *queries per run* distinct queries
+(default 20, adjustable 1–100), so a large site is covered over several runs.
 
 **Running** (`hooks/serp/*`): a client-side queue, one query at a time, with a **minimum
 20 s interval**. The run is resumable — a page that already has a stored result is
@@ -321,6 +328,17 @@ own `localStorage` key, separate from the crawl snapshot.
 - `serpapi` uses the paid JSON API when `SERPAPI_KEY` is set. Provider `auto` prefers it
   automatically when the key is present.
 
+**If you get blocked** (`blocked` → the run auto-pauses), in order of effectiveness:
+
+1. Set `SERPAPI_KEY` — provider `auto` then never scrapes Google/Bing. This is the real fix.
+2. Route SERP through a cloud browser with a residential IP via `BROWSERLESS_WS_ENDPOINT`.
+3. Run fewer queries, and wait a while. The free browser path already masks
+   `navigator.webdriver`, sends realistic headers and pre-sets Google's consent cookies,
+   but the IP reputation dominates — so it can still be blocked.
+
+A different User-Agent helps only marginally, and an **LLM does not help at all**: it
+cannot fetch live results (it would invent rankings) and has no effect on blocking.
+
 **Competitor comparison**: for each query, the top N (default 2, max 5) non-owned results
 are fetched and analysed with the **same** on-page extractor as your own crawl
 (`lib/serp/competitor.ts`), so title length, description length, H1 count, word count and
@@ -333,6 +351,43 @@ embeds the full `serp` record per page.
 > service — the spacing and the enable switch exist for that reason. Expect intermittent
 > blocks; use the paid backend for stable results. As with the audit, the rank is a
 > snapshot of current results, not a Google metric.
+
+---
+
+## GA4 Traffic Overlay
+
+Optional. Adds real page-view numbers to the audit and a **high-traffic, low-score** filter,
+so you fix the pages that matter most — the same numbers a Google Analytics report shows,
+joined to your crawl.
+
+- **Server credentials**: `GA4_PROPERTY_ID` (numeric property id) and
+  `GOOGLE_APPLICATION_CREDENTIALS` (path to a service-account JSON with the *Analytics Data
+  API* enabled and read access to the property). The browser only sends page paths; the key
+  never leaves the server.
+- `POST /api/analytics` authenticates with a signed JWT (`node:crypto`, **no SDK**), runs a
+  `pagePath` × `screenPageViews`/`sessions` report for the crawled paths (28-day window,
+  adjustable), and returns the rows.
+- In the audit tab, **Load traffic** fills the **Views** column and marks rows with ≥100
+  views and a score below 60 as opportunities. Results are cached in `localStorage`.
+
+## AI Rewrite Suggestions (LLM)
+
+Optional and per-page. In a page's audit detail, **AI rewrite suggestions** asks a model for a
+better `<title>`, meta description and short notes.
+
+- Any **OpenAI-compatible** endpoint works (Ollama, vLLM, llama.cpp, OpenAI, most gateways).
+  Set the base URL and model in the panel, or leave the server defaults `LLM_BASE_URL` /
+  `LLM_MODEL`. The API key is **server-side only** (`LLM_API_KEY`) and is never sent to the
+  browser.
+- `POST /api/seo/suggest` builds a prompt from the page's title/description/H1/keywords and
+  its failing checks, then parses a strict-JSON answer — leniently, so a chatty model still
+  works.
+- **SERP vision fallback**: if you also set a vision-capable `LLM_VISION_MODEL` (with
+  `LLM_BASE_URL`), a SERP whose markup cannot be parsed is read from a **screenshot**
+  instead. Off by default; only used when the DOM extractor finds nothing.
+
+> The client ships **no vendor SDK**: it speaks the same `/chat/completions` protocol the
+> Vercel AI SDK's OpenAI provider does, so swapping that SDK in is a one-function change.
 
 ---
 
@@ -436,6 +491,12 @@ types/
 | `CHROMIUM_EXECUTABLE_PATH` | unset | Path to a Chromium binary. On Vercel, feed it `@sparticuz/chromium`'s `executablePath()` |
 | `BROWSERLESS_WS_ENDPOINT` | unset | When set, the app connects to a cloud browser via `chromium.connectOverCDP()` instead of launching one |
 | `SERPAPI_KEY` | unset | Enables the paid SERP backend. When set, the SERP **provider = auto** uses [SerpAPI](https://serpapi.com) instead of scraping Google/Bing. Without it, only the (blockable) browser backend is available |
+| `GA4_PROPERTY_ID` | unset | Numeric GA4 property id. With the credential below, enables the traffic overlay |
+| `GOOGLE_APPLICATION_CREDENTIALS` | unset | Path to a service-account JSON key with the Analytics Data API enabled |
+| `LLM_BASE_URL` | unset | OpenAI-compatible endpoint, e.g. `http://localhost:11434/v1` (Ollama). Enables AI suggestions |
+| `LLM_MODEL` | unset | Model id for suggestions, e.g. `llama3.1` |
+| `LLM_API_KEY` | unset | Bearer token for the LLM endpoint. **Server-side only** — never sent to the browser |
+| `LLM_VISION_MODEL` | unset | Vision-capable model id. With `LLM_BASE_URL`, enables the SERP screenshot fallback |
 
 ```bash
 # .env.local
@@ -443,6 +504,12 @@ ALLOW_PRIVATE_TARGETS=1
 # CHROMIUM_EXECUTABLE_PATH=/tmp/chromium
 # BROWSERLESS_WS_ENDPOINT=wss://xxx.browserless.io/?token=yyy
 # SERPAPI_KEY=your_serpapi_key
+# GA4_PROPERTY_ID=123456789
+# GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+# LLM_BASE_URL=http://localhost:11434/v1
+# LLM_MODEL=llama3.1
+# LLM_API_KEY=optional
+# LLM_VISION_MODEL=llava
 ```
 
 ---
@@ -571,13 +638,15 @@ npm run e2e       # Playwright: real Chromium (builds first)
 | Unit | `tests/unit/sitemap.test.ts` | priority (3 strategies) / changefreq / lastmod / XML build / index / split |
 | Unit | `tests/unit/url-display.test.ts` | host override, readable decoding, final-URL selection |
 | Unit | `tests/unit/stats.test.ts` | Derived counters, throughput, **ETA**, formatting |
-| Unit | `tests/unit/charts.test.ts` | Y-axis width ladder and axis number formatting |
+| Unit | `tests/unit/charts.test.ts` | Y-axis width ladder, axis number formatting, trend sample selection (time window + downsampling) |
 | Unit | `tests/unit/seo-document.test.ts` | Per-page extraction from parsed HTML (metadata, headings, links, keywords, caps) |
 | Unit | `tests/unit/seo-score.test.ts` | Rule evaluation, weights, scoring and the site-wide report |
 | Unit | `tests/unit/serp-extract.test.ts` | Organic-result extraction, ad/engine filtering, block detection, search URLs |
 | Unit | `tests/unit/serp-rank.test.ts` | Host normalization, rank lookup, dedup, competitor picking |
 | Unit | `tests/unit/serp-queries.test.ts` | H1/title/keyword derivation, dedup, worst-first ordering, caps |
 | Unit | `tests/unit/serp-engine.test.ts` | Spaced queue loop: interval, recoverable vs fatal errors, pause, abort |
+| Unit | `tests/unit/analytics.test.ts` | Service-account parsing, JWT signing, path normalization, report mapping (real RSA key + mocked fetch) |
+| Unit | `tests/unit/llm.test.ts` | Config resolution, JSON extraction, chat completion, suggestion/vision parsing |
 | Unit | `tests/unit/i18n.test.ts` | Dictionary parity, interpolation, log formatting, locale detection |
 | Unit | `tests/unit/export.test.ts` | CSV (BOM, quoting), JSON, log text |
 | Unit | `tests/unit/zip.test.ts` | ZIP structure verified by inflating with `inflateRawSync` |
@@ -586,6 +655,7 @@ npm run e2e       # Playwright: real Chromium (builds first)
 | Engine | `tests/unit/crawl-engine.test.ts` | BFS order, dedup, slash alias, page budget, pause flag, **retries, concurrency, redirect dedup** (fake HTTP + clock) |
 | API | `tests/api/crawl-route.test.ts` | zod 400s, SSRF 400, 200/206/502 mapping (mocked browser) |
 | API | `tests/api/serp-route.test.ts` | zod 400s, 200 payload, blocked→502, no-key→400 (mocked provider) |
+| API | `tests/api/analytics-route.test.ts`, `tests/api/seo-suggest-route.test.ts` | zod 400s, success payloads, config detection (mocked client) |
 | Components | `tests/components/*.test.tsx` | ControlPanel, UrlList, LogPanel, ExportBar, ViewTabs, SeoTab, SerpPanel (wrapped in `LocaleProvider`) |
 | E2E | `tests/e2e/crawl.spec.ts` | Real crawl, lastmod branches, priority strategy, retry, concurrency, pause/resume/stop, language switch, host override, readable URLs, chart period, redirect exclusion, **SEO audit + CSV columns**, **SERP rank (stubbed API)** |
 
@@ -660,6 +730,9 @@ node --check chunk.js   # exit 0 = valid
 - The SEO score is a heuristic checklist, not a ranking signal; PageRank has no public API
 - SERP ranking is **opt-in and best-effort**: search engines block automated browsing, so the browser backend fails intermittently (detected and auto-paused) and the extracted results depend on markup that changes often; the paid SerpAPI backend is the reliable path
 - SERP queries are derived heuristically (H1/title), spaced ≥20 s apart, capped per run, and resumable; a rank is a single engine's snapshot for one query, not a rank-tracking time series
+- GA4 traffic is a single `pagePath` report over the last 28 days; it is joined by pathname (query variants are summed) and not by full URL
+- AI suggestions depend entirely on the configured model; the app sends only the page's already-collected facts (title/description/H1/keywords/issues) and does not send the page HTML
+- The vision fallback needs a vision-capable model and only runs when DOM extraction returns nothing
 - TypeScript is pinned to **5.9**: the native `typescript@7` compiler is not yet supported by typescript-eslint and breaks `npm run lint`
 
 ---

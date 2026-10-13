@@ -217,23 +217,37 @@ export function UrlList({ records, loading = false }: UrlListProps) {
                       {t(`status.${record.status}`)}
                     </span>
 
-                    <span className="flex min-w-0 items-center gap-1">
-                      <a
-                        href={record.url}
-                        target="_blank"
-                        rel="noreferrer noopener"
-                        title={record.url}
-                        className="truncate font-mono text-[11px] text-foreground hover:underline"
-                      >
-                        {record.url}
-                      </a>
-                      {record.redirected ? (
-                        <span
-                          className="shrink-0 text-amber-600 dark:text-amber-400"
-                          title={t('urls.redirectedHint')}
+                    <span className="flex min-w-0 flex-col justify-center gap-0.5">
+                      <span className="flex min-w-0 items-center gap-1">
+                        <a
+                          href={record.url}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          title={record.url}
+                          className="truncate font-mono text-[11px] text-foreground hover:underline"
                         >
-                          ↪
-                        </span>
+                          {record.url}
+                        </a>
+                        {record.redirected ? (
+                          <span
+                            className="shrink-0 text-amber-600 dark:text-amber-400"
+                            title={t('urls.redirectedHint')}
+                          >
+                            ↪
+                          </span>
+                        ) : null}
+                      </span>
+                      {/* Where a failed link was found: the page that linked to it. */}
+                      {record.status === 'failed' && record.discoveredFrom ? (
+                        <a
+                          href={record.discoveredFrom}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                          title={`${t('urls.source')}: ${record.discoveredFrom}`}
+                          className="truncate text-[10px] text-muted-foreground hover:underline"
+                        >
+                          {t('urls.source')}: {record.discoveredFrom}
+                        </a>
                       ) : null}
                     </span>
 

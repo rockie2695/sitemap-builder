@@ -13,15 +13,16 @@
  */
 'use client'
 
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { useStoredState } from '@/hooks/useStoredState'
+import { readStoredValue, useStoredState, writeStoredValue } from '@/hooks/useStoredState'
 import { deriveQueries } from '@/lib/serp/queries'
 import { buildSeoReport } from '@/lib/seo/report'
 import { contextFromReport, scorePage } from '@/lib/seo/score'
 import type { UrlRecord } from '@/types/crawl'
 import {
   SERP_MAX_ANALYZE_TOP,
+  SERP_MAX_DERIVED_QUERIES,
   SERP_MAX_QUERIES,
   SERP_MIN_INTERVAL_MS,
   type SerpErrorCode,
@@ -87,7 +88,10 @@ function clampOptions(options: SerpOptions): SerpOptions {
  */
 export function useSerp(records: readonly UrlRecord[]): UseSerpResult {
   const [storedOptions, setStoredOptions] = useStoredState<SerpOptions>(SERP_OPTIONS_KEY, DEFAULT_SERP_OPTIONS)
-  const [results, setResults] = useStoredState<SerpResults>(SERP_RESULTS_KEY, {})
+  // Results are large and change often, so they are NOT written through
+  // `useStoredState` (which persists on every render); a debounced effect below keeps
+  // the write cost bounded for hundreds of pages.
+  const [results, setResults] = useState<SerpResults>({})
   const [status, setStatus] = useState<SerpStatus>('idle')
   const [current, setCurrent] = useState<SerpQuery | null>(null)
   const [failures, setFailures] = useState<SerpFailure[]>([])
@@ -97,19 +101,31 @@ export function useSerp(records: readonly UrlRecord[]): UseSerpResult {
   const pausedRef = useRef(false)
   const runningRef = useRef(false)
 
+  // Restore once on mount (never read storage during render).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sanctioned external-store sync
+    setResults(readStoredValue<SerpResults>(SERP_RESULTS_KEY, {}))
+  }, [])
+
+  // Persist on a trailing debounce, so a burst of results is one write.
+  useEffect(() => {
+    const id = window.setTimeout(() => writeStoredValue(SERP_RESULTS_KEY, results), 600)
+    return () => window.clearTimeout(id)
+  }, [results])
+
   // Merge over defaults so a stored value from an older build cannot leave a field
   // undefined (invariant: new options are always backfilled).
   const options = useMemo(() => clampOptions({ ...DEFAULT_SERP_OPTIONS, ...storedOptions }), [storedOptions])
 
-  /** Every page worth querying, worst SEO score first, de-duplicated and capped. */
+  /** One row per audited page, worst SEO score first (never capped by the run budget). */
   const queries = useMemo<SerpQuery[]>(() => {
     const context = contextFromReport(buildSeoReport(records))
     const scores = new Map<string, number | null>()
     for (const record of records) {
       if (record.seo) scores.set(record.url, scorePage(record, context).score)
     }
-    return deriveQueries(records, { maxQueries: options.maxQueries, scores })
-  }, [records, options.maxQueries])
+    return deriveQueries(records, { limit: SERP_MAX_DERIVED_QUERIES, scores })
+  }, [records])
 
   const completed = useMemo(
     () => queries.reduce((sum, entry) => sum + (results[entry.url] ? 1 : 0), 0),
@@ -141,9 +157,15 @@ export function useSerp(records: readonly UrlRecord[]): UseSerpResult {
     setFailures([])
     setStatus('running')
 
+    // Seed the reuse map from results already stored, so a page that shares a query
+    // with an already-checked page is filled in without a second lookup.
+    const reuse = new Map<string, SerpRecord>()
+    for (const record of Object.values(results)) reuse.set(record.query, record)
+
     void runSerpQueue({
       queries: queue,
       options,
+      reuse,
       signal: controller.signal,
       shouldPause: () => pausedRef.current,
       fetchOne: (entry, signal) =>

@@ -10,7 +10,7 @@
  * （見 `tests/unit/crawl-reducer.test.ts`）。它也不格式化任何面向使用者的文字——
  * 日誌以 i18n 鍵加參數輸出，讓介面能以任意語系呈現。
  */
-import type { LogEntry, UrlRecord } from '@/types/crawl'
+import type { HistoryPoint, LogEntry, UrlRecord } from '@/types/crawl'
 
 import { isRedirected } from '@/lib/crawler/redirect'
 
@@ -91,6 +91,21 @@ function countByStatus(records: ReadonlyMap<string, UrlRecord>): { done: number;
     else if (record.status === 'failed') failed += 1
   }
   return { done, failed }
+}
+
+/**
+ * Append a throughput sample, keeping the ring buffer capped.
+ *
+ * The same capped append is used by the sampler and by the terminal actions, so a task
+ * always records a **final** point — otherwise the trend chart lags the real totals by up
+ * to one tick when the crawl ends.
+ *
+ * 追加一個吞吐量取樣並維持環形緩衝上限。取樣器與結束動作共用同一段，
+ * 確保任務一定會記錄**最後一點**——否則抓取結束時，趨勢圖會落後實際總數最多一個週期。
+ */
+function pushHistory(history: HistoryPoint[], point: HistoryPoint): HistoryPoint[] {
+  const next = [...history, point]
+  return next.length > HISTORY_LIMIT ? next.slice(next.length - HISTORY_LIMIT) : next
 }
 
 /**
@@ -240,9 +255,13 @@ export function crawlReducer(state: CrawlState, action: CrawlAction): CrawlState
 
       const { logs, logSeq } = withLogs(state.logs, state.logSeq, action.now, [draft])
 
+      const records = settleCrawling(state.records, action.now, 'Task stopped before this page finished')
+      const { done, failed } = countByStatus(records)
+
       return {
         ...state,
-        records: settleCrawling(state.records, action.now, 'Task stopped before this page finished'),
+        records,
+        history: pushHistory(state.history, { t: action.now, done, failed, pending: 0 }),
         phase: 'stopped',
         pendingCount: 0,
         currentUrl: null,
@@ -256,17 +275,19 @@ export function crawlReducer(state: CrawlState, action: CrawlAction): CrawlState
 
     case 'task/finish': {
       if (state.phase !== 'running') return state
-      const { done } = countByStatus(state.records)
+      const records = settleCrawling(state.records, action.now, 'Task finished before this page completed')
+      const { done, failed } = countByStatus(records)
       const { logs, logSeq } = withLogs(state.logs, state.logSeq, action.now, [
         {
           level: 'success',
           key: 'log.task.finish',
-          params: { total: state.records.size, done },
+          params: { total: records.size, done },
         },
       ])
       return {
         ...state,
-        records: settleCrawling(state.records, action.now, 'Task finished before this page completed'),
+        records,
+        history: pushHistory(state.history, { t: action.now, done, failed, pending: 0 }),
         phase: 'done',
         pendingCount: 0,
         currentUrl: null,
@@ -462,14 +483,10 @@ export function crawlReducer(state: CrawlState, action: CrawlAction): CrawlState
 
     case 'tick': {
       const { done, failed } = countByStatus(state.records)
-      const history = [...state.history, { t: action.now, done, failed, pending: state.pendingCount }]
       return {
         ...state,
         now: action.now,
-        history:
-          history.length > HISTORY_LIMIT
-            ? history.slice(history.length - HISTORY_LIMIT)
-            : history,
+        history: pushHistory(state.history, { t: action.now, done, failed, pending: state.pendingCount }),
       }
     }
 

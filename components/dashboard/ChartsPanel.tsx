@@ -29,15 +29,9 @@ import { useI18n } from '@/components/providers/LocaleProvider'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { useStoredState } from '@/hooks/useStoredState'
-import { formatAxisNumber, yAxisWidthFor } from '@/lib/charts'
+import { formatAxisNumber, selectTrendSamples, yAxisWidthFor, type ChartPeriod } from '@/lib/charts'
 import type { DerivedStats } from '@/lib/stats'
 import type { HistoryPoint } from '@/types/crawl'
-
-/** How much of the history the trend chart shows. */
-type ChartPeriod = 'current' | 'full'
-
-/** Samples shown in the "current" period (1 sample/s → one minute). */
-const CURRENT_WINDOW_SAMPLES = 60
 
 interface ChartsPanelProps {
   /** Derived counters. */
@@ -60,10 +54,7 @@ export function ChartsPanel({ stats, history }: ChartsPanelProps) {
   const [period, setPeriod] = useStoredState<ChartPeriod>('chart-period', 'current')
 
   /** Samples actually rendered, honouring the period switch. */
-  const samples = useMemo(
-    () => (period === 'current' ? history.slice(-CURRENT_WINDOW_SAMPLES) : history),
-    [history, period],
-  )
+  const samples = useMemo(() => selectTrendSamples(history, period), [history, period])
 
   /** Largest value on the Y axis, used to size its label gutter. */
   const maxValue = useMemo(
@@ -71,8 +62,9 @@ export function ChartsPanel({ stats, history }: ChartsPanelProps) {
     [samples],
   )
 
+  /** Raw timestamps kept numeric so the x-axis can be a real time scale. */
   const trend = useMemo(
-    () => samples.map((point) => ({ t: formatClock(point.t), done: point.done, pending: point.pending })),
+    () => samples.map((point) => ({ t: point.t, done: point.done, pending: point.pending })),
     [samples],
   )
 
@@ -162,6 +154,10 @@ export function ChartsPanel({ stats, history }: ChartsPanelProps) {
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis
                     dataKey="t"
+                    type="number"
+                    scale="time"
+                    domain={['dataMin', 'dataMax']}
+                    tickFormatter={formatClock}
                     tick={{ fontSize: 10, fill: 'var(--muted-foreground)' }}
                     axisLine={false}
                     tickLine={false}
@@ -176,6 +172,7 @@ export function ChartsPanel({ stats, history }: ChartsPanelProps) {
                     tickFormatter={formatAxisNumber}
                   />
                   <ChartTooltip
+                    labelFormatter={(value) => formatClock(Number(value))}
                     contentStyle={{
                       background: 'var(--popover)',
                       border: '1px solid var(--border)',

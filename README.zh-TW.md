@@ -17,6 +17,8 @@
 - [選項參考](#選項參考)
 - [站內 SEO 稽核](#站內-seo-稽核)
 - [SERP 排名與競品比較](#serp-排名與競品比較)
+- [GA4 流量疊加](#ga4-流量疊加)
+- [AI 改寫建議（LLM）](#ai-改寫建議llm)
 - [功能清單](#功能清單)
 - [抓取規則](#抓取規則)
 - [sitemap 的選用欄位](#sitemap-的選用欄位)
@@ -171,6 +173,8 @@ ALLOW_PRIVATE_TARGETS=1 npm run dev
 | 斷點續爬 | 任務快照寫入 localStorage；重新整理後可選擇繼續 |
 | SEO 稽核 | 單頁 on-page 檢查與透明 0～100 分、修復建議，以及全站報告（重複、缺 meta、多 H1、noindex、內容過少、canonical 不一致） |
 | SERP 排名 | 選用：逐一以 H1／標題推導查詢、查詢排名、列出前段結果並並列**競品**單頁指標；可選瀏覽器或付費後端；固定間隔並在封鎖時自動暫停 |
+| GA4 流量 | 選用：以服務帳戶疊加瀏覽／工作階段數、**流量**欄與「高流量低分」優先排序 |
+| AI 建議 | 選用：以任何 OpenAI 相容模型改寫單頁 `<title>`／描述；金鑰只在伺服器端；SERP 無法解析時可選截圖備援 |
 | 介面 | 分欄／列表／日誌／SEO 檢視切換、明暗主題、數字動畫、骨架載入、固定匯出列 |
 
 ---
@@ -274,9 +278,11 @@ Custom Search JSON API 不再接受新客戶）。使用前請先讀介面上的
 
 切到 **SEO** 檢視，開啟 **SERP 排名** 子頁籤。
 
-**查詢**（`lib/serp/queries.ts`）：每個已稽核頁面一個查詢，取它的 `H1`（最精煉的主題描述）
-或標題，去重後以**分數最低者優先**排序，讓真正想修的頁面先被檢查。單次執行有上限
-（預設 20，可調 1～100）。
+**查詢**（`lib/serp/queries.ts`）：**每個成功抓取的頁面一列**，取它的 `H1`（最精煉的主題描述）
+或標題，以**分數最低者優先**排序，讓真正想修的頁面先出現。失敗頁（404／5xx 與連線錯誤）
+會略過。清單與稽核一致——不合併頁面；相同查詢在**執行**時去重：重複查詢只抓一次，
+結果會重用給共用該查詢的每個頁面。每次執行最多查詢「每次執行查詢數」個相異關鍵詞
+（預設 20，可調 1～100），因此大型網站可分多次執行。
 
 **執行**（`hooks/serp/*`）：前端佇列，一次一個查詢，**最小間隔 20 秒**。可續跑——
 已有儲存結果的頁面會略過，因此被封鎖後恢復會從中斷處繼續。結果存在自己的
@@ -289,6 +295,16 @@ Custom Search JSON API 不再接受新客戶）。使用前請先讀介面上的
   會判定為 `blocked` 並**自動暫停**該次執行。
 - `serpapi`：設定 `SERPAPI_KEY` 時使用付費 JSON API；`auto` 會在有 key 時自動採用。
 
+**若被封鎖**（`blocked` → 該次執行會自動暫停），依有效性排序：
+
+1. 設定 `SERPAPI_KEY`——provider `auto` 之後就不會再爬 Google／Bing。這才是真正的解法。
+2. 透過 `BROWSERLESS_WS_ENDPOINT` 走具住宅 IP 的雲端瀏覽器。
+3. 減少每次查詢數並稍候。免費瀏覽器路徑已會遮蔽 `navigator.webdriver`、送出擬真的標頭、
+   並預先設定 Google 的同意 cookie，但 IP 信譽仍是主因，因此仍可能被封鎖。
+
+更換 User-Agent 幫助有限，而 **LLM 完全幫不上忙**：它無法取得即時結果（只會編造排名），
+也與是否被封鎖無關。
+
 **競品比較**：每個查詢會抓取前 N 名（預設 2，上限 5）非自家結果，並用與自家抓取
 **完全相同**的單頁採集器分析（`lib/serp/competitor.ts`），因此標題長度、描述長度、
 H1 數量、字數與結構化資料能同基準比較。
@@ -299,6 +315,35 @@ JSON 每筆頁面內嵌完整 `serp` 記錄。
 > **合規與穩定度**：讀取搜尋頁可能違反引擎的服務條款——固定間隔與啟用開關就是為此存在。
 > 預期會偶爾被封鎖；需要穩定結果請改用付費後端。與稽核一樣，排名是當下結果的快照，
 > 不是 Google 的官方指標。
+
+---
+
+## GA4 流量疊加
+
+選用。把真實瀏覽數疊加到稽核結果，並提供「高流量低分」篩選，讓你優先處理最重要的頁面。
+
+- **伺服器憑證**：`GA4_PROPERTY_ID`（資源編號）與 `GOOGLE_APPLICATION_CREDENTIALS`
+  （服務帳戶 JSON 路徑，需啟用 *Analytics Data API* 並具備該資源的讀取權）。瀏覽器只送出頁面路徑，
+  金鑰不會離開伺服器。
+- `POST /api/analytics` 以簽章 JWT 驗證（`node:crypto`，**不需 SDK**），對已抓取路徑執行
+  `pagePath` × `screenPageViews`／`sessions` 報表（預設 28 天，可調）並回傳列。
+- 在稽核頁按 **載入流量** 會填入 **流量** 欄，並將「瀏覽數 ≥100 且分數 <60」標為機會。
+  結果會快取於 `localStorage`。
+
+## AI 改寫建議（LLM）
+
+選用、逐頁。在單頁詳情按 **產生建議**，會請模型給出更好的 `<title>`、meta 描述與簡短說明。
+
+- 任何 **OpenAI 相容**端點皆可（Ollama、vLLM、llama.cpp、OpenAI、多數閘道）。可在面板填 base URL
+  與模型，或使用伺服器預設 `LLM_BASE_URL`／`LLM_MODEL`。API 金鑰**只在伺服器端**（`LLM_API_KEY`），
+  不會送到瀏覽器。
+- `POST /api/seo/suggest` 依頁面的標題／描述／H1／關鍵詞與未通過的檢查組提示，並以寬鬆方式解析
+  嚴格 JSON 回應（模型多話也能用）。
+- **SERP 視覺備援**：若另設支援視覺的 `LLM_VISION_MODEL`（搭配 `LLM_BASE_URL`），
+  當 SERP 版面無法解析時會改讀**截圖**。預設關閉；只在 DOM 擷取不到結果時使用。
+
+> 客戶端**不引入任何廠商 SDK**：走的是與 Vercel AI SDK 的 OpenAI provider 相同的
+> `/chat/completions` 協定，因此要換成該 SDK 只需改一個函式。
 
 ---
 
@@ -379,6 +424,12 @@ types/crawl.ts                  # 領域型別（前後端共用）
 | `CHROMIUM_EXECUTABLE_PATH` | 未設定 | 指定 Chromium 執行檔路徑。Vercel 上填入 `@sparticuz/chromium` 的 `executablePath()` |
 | `BROWSERLESS_WS_ENDPOINT` | 未設定 | 設定後改以 `chromium.connectOverCDP()` 連接雲端瀏覽器，不再本機啟動 |
 | `SERPAPI_KEY` | 未設定 | 啟用付費 SERP 後端。設定後 **provider = auto** 會改用 [SerpAPI](https://serpapi.com)，不再爬 Google／Bing；未設定則只有（可能被封鎖的）瀏覽器後端 |
+| `GA4_PROPERTY_ID` | 未設定 | GA4 資源編號；搭配下方憑證即可啟用流量疊加 |
+| `GOOGLE_APPLICATION_CREDENTIALS` | 未設定 | 服務帳戶 JSON 路徑（需啟用 Analytics Data API） |
+| `LLM_BASE_URL` | 未設定 | OpenAI 相容端點，例如 `http://localhost:11434/v1`（Ollama）；啟用 AI 建議 |
+| `LLM_MODEL` | 未設定 | 建議用模型，例如 `llama3.1` |
+| `LLM_API_KEY` | 未設定 | LLM 端點的 Bearer 權杖。**只在伺服器端**，不會送到瀏覽器 |
+| `LLM_VISION_MODEL` | 未設定 | 支援視覺的模型；搭配 `LLM_BASE_URL` 可啟用 SERP 截圖備援 |
 
 ```bash
 # .env.local
@@ -386,6 +437,12 @@ ALLOW_PRIVATE_TARGETS=1
 # CHROMIUM_EXECUTABLE_PATH=/tmp/chromium
 # BROWSERLESS_WS_ENDPOINT=wss://xxx.browserless.io/?token=yyy
 # SERPAPI_KEY=your_serpapi_key
+# GA4_PROPERTY_ID=123456789
+# GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+# LLM_BASE_URL=http://localhost:11434/v1
+# LLM_MODEL=llama3.1
+# LLM_API_KEY=optional
+# LLM_VISION_MODEL=llava
 ```
 
 ---
@@ -518,6 +575,8 @@ npm run e2e       # Playwright：真實 Chromium（會先建置）
 | 單元 | `tests/unit/serp-rank.test.ts` | 主機正規化、排名查找、去重、競品挑選 |
 | 單元 | `tests/unit/serp-queries.test.ts` | H1／標題／關鍵詞推導、去重、低分優先、上限 |
 | 單元 | `tests/unit/serp-engine.test.ts` | 間隔佇列迴圈：間隔、可恢復與致命錯誤、暫停、中止 |
+| 單元 | `tests/unit/analytics.test.ts` | 服務帳戶解析、JWT 簽章、路徑正規化、報表映射（真實 RSA 金鑰 + mock fetch） |
+| 單元 | `tests/unit/llm.test.ts` | 設定解析、JSON 擷取、聊天完成、建議／視覺解析 |
 | 單元 | `tests/unit/i18n.test.ts` | 字典對齊、插值、日誌格式化、語系偵測 |
 | 單元 | `tests/unit/export.test.ts` | CSV（BOM、引號跳脫）、JSON、日誌文字 |
 | 單元 | `tests/unit/zip.test.ts` | ZIP 結構以 `inflateRawSync` 解壓驗證 |
@@ -597,6 +656,9 @@ node --check chunk.js   # 退出碼 0 = 語法正確
 - SEO 分數是啟發式檢查清單，不是排名訊號；PageRank 已無公開 API
 - SERP 排名是**選用且盡力而為**：搜尋引擎會封鎖自動化瀏覽，因此瀏覽器後端會間歇性失敗（會被偵測並自動暫停），擷取結果也依賴經常改版的版面；需要穩定請用付費 SerpAPI 後端
 - SERP 查詢以啟發式推導（H1／標題）、間隔 ≥20 秒、每次有上限且可續跑；排名只是某引擎對單一查詢的當下快照，不是時間序列的排名追蹤
+- GA4 流量是最近 28 天的單一 `pagePath` 報表；以路徑名（pathname）合併（查詢變體會相加），並非以完整網址對應
+- AI 建議完全取決於所設模型；本程式只送出頁面已蒐集的事實（標題／描述／H1／關鍵詞／未通過檢查），不會送出頁面 HTML
+- 視覺備援需要支援視覺的模型，且只在 DOM 擷取不到結果時才會執行
 - TypeScript 釘在 **5.9**：原生 `typescript@7` 編譯器尚未被 typescript-eslint 支援，
   會導致 `npm run lint` 失敗
 

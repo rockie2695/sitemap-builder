@@ -127,4 +127,32 @@ describe('runSerpQueue / SERP 佇列', () => {
     expect(fetchOne).not.toHaveBeenCalled()
     expect(d.onDone).not.toHaveBeenCalled()
   })
+
+  it('stops after the per-run query budget / 達到每次執行上限後停止', async () => {
+    const fetchOne = vi.fn(async (entry: SerpQuery) => ok(entry.query))
+    const d = deps({
+      fetchOne,
+      options: { engine: 'google', provider: 'auto', maxQueries: 1, analyzeTop: 0, minIntervalMs: 1_000 },
+    })
+    await runSerpQueue(d)
+    expect(fetchOne).toHaveBeenCalledTimes(1)
+    expect(d.onResult).toHaveBeenCalledTimes(1)
+    expect(d.onDone).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses a record when the query repeats / 相同查詢重用結果', async () => {
+    const fetchOne = vi.fn(async (entry: SerpQuery) => ok(entry.query))
+    const d = deps({
+      fetchOne,
+      queries: [
+        { query: 'same', url: 'https://example.com/a' },
+        { query: 'same', url: 'https://example.com/b' },
+        { query: 'other', url: 'https://example.com/c' },
+      ],
+    })
+    await runSerpQueue(d)
+    // 'same' is fetched once and reused; 'other' is fetched once.
+    expect(fetchOne).toHaveBeenCalledTimes(2)
+    expect(d.onResult).toHaveBeenCalledTimes(3)
+  })
 })

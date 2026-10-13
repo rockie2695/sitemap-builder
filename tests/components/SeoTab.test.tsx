@@ -125,7 +125,7 @@ describe('SeoTab', () => {
         ]}
       />,
     )
-    await user.click(screen.getByRole('switch'))
+    await user.click(screen.getAllByRole('switch')[0])
     expect(screen.queryByText('https://example.com/good')).not.toBeInTheDocument()
     expect(screen.getByText('https://example.com/bad')).toBeInTheDocument()
   })
@@ -146,8 +146,22 @@ describe('SeoTab', () => {
     await user.click(screen.getByText('https://example.com/bad'))
     expect(screen.getByText('Page detail')).toBeInTheDocument()
     expect(screen.getByText('Checks for this page')).toBeInTheDocument()
+    // The value legend explains what the bracketed numbers mean.
+    expect(screen.getByText(/number in brackets/)).toBeInTheDocument()
     expect(screen.getByText('Title tag present')).toBeInTheDocument()
     // A failing check shows its fix hint.
     expect(screen.getByText('Add a unique <title> to the page')).toBeInTheDocument()
+  })
+
+  it('shows the GA4 traffic column and the AI section / 顯示流量欄與 AI 區塊', async () => {
+    const user = userEvent.setup()
+    renderWithI18n(<AuditTab records={[record('https://example.com/a')]} />)
+
+    // The traffic overlay adds a column (no data loaded yet → the header only).
+    expect(screen.getByText('Views')).toBeInTheDocument()
+
+    await user.click(screen.getByText('https://example.com/a'))
+    expect(screen.getByText('AI rewrite suggestions')).toBeInTheDocument()
+    expect(screen.getByText('Model base URL')).toBeInTheDocument()
   })
 })

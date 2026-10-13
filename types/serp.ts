@@ -110,7 +110,11 @@ export interface SerpOptions {
   engine: SerpEngine
   /** Backend: `auto` prefers a configured paid API over the browser. */
   provider: SerpProviderId
-  /** Maximum derived queries per run. */
+  /**
+   * Maximum **unique** queries fetched per run. The list always shows every audited
+   * page; this only bounds one run, so a large site is covered over several runs
+   * (or a higher value).
+   */
   maxQueries: number
   /** Top competitors to analyse on-page per query (0 = skip). */
   analyzeTop: number
@@ -124,9 +128,12 @@ export type SerpStatus = 'idle' | 'running' | 'paused' | 'stopped' | 'done'
 /** Minimum delay between two SERP queries, to stay under the engines' radar. */
 export const SERP_MIN_INTERVAL_MS = 20_000
 
-/** Default and maximum number of derived queries per run. */
+/** Default and maximum number of unique queries fetched in one run. */
 export const SERP_DEFAULT_MAX_QUERIES = 20
 export const SERP_MAX_QUERIES = 100
+
+/** Safety cap on the derived per-page query list (one row per audited page). */
+export const SERP_MAX_DERIVED_QUERIES = 5_000
 
 /** How many organic results to keep. */
 export const SERP_RESULT_LIMIT = 20

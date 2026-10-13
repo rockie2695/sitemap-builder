@@ -316,6 +316,12 @@ export type UiKey =
   | 'seo.col.wordCount'
   | 'seo.col.indexable'
   | 'seo.col.keywords'
+  // Explanatory hints / extra labels
+  | 'urls.source'
+  | 'seo.checksValueHint'
+  | 'seo.fact.links'
+  | 'seo.fact.keywords'
+  | 'serp.rankHint'
   // SEO sub-tabs
   | 'seo.tab.audit'
   | 'seo.tab.serp'
@@ -376,6 +382,34 @@ export type UiKey =
   | 'serp.status.done'
   | 'serp.costWarning'
   | 'serp.notAuditedHint'
+  | 'serp.listHint'
+  // GA4 traffic overlay
+  | 'seo.ga4.title'
+  | 'seo.ga4.hint'
+  | 'seo.ga4.load'
+  | 'seo.ga4.loading'
+  | 'seo.ga4.clear'
+  | 'seo.ga4.loaded'
+  | 'seo.ga4.noCredentials'
+  | 'seo.ga4.error'
+  | 'seo.col.traffic'
+  | 'seo.highTrafficLowScore'
+  | 'seo.opportunities'
+  // AI rewrite suggestions
+  | 'seo.ai.title'
+  | 'seo.ai.generate'
+  | 'seo.ai.regenerate'
+  | 'seo.ai.working'
+  | 'seo.ai.baseUrl'
+  | 'seo.ai.baseUrlPlaceholder'
+  | 'seo.ai.model'
+  | 'seo.ai.modelPlaceholder'
+  | 'seo.ai.hint'
+  | 'seo.ai.resultTitle'
+  | 'seo.ai.resultDescription'
+  | 'seo.ai.notes'
+  | 'seo.ai.noConfig'
+  | 'seo.ai.error'
 
 /** A complete dictionary for one locale. */
 export type Dictionary = Record<UiKey, string>

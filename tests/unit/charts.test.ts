@@ -5,7 +5,57 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { formatAxisNumber, yAxisWidthFor } from '@/lib/charts'
+import { downsamplePoints, formatAxisNumber, selectTrendSamples, yAxisWidthFor } from '@/lib/charts'
+import type { HistoryPoint } from '@/types/crawl'
+
+/** A history sample. */
+function point(t: number, done = 0, pending = 0): HistoryPoint {
+  return { t, done, failed: 0, pending }
+}
+
+describe('selectTrendSamples / 選取樣本', () => {
+  // 120 samples, one per second: t = 0s … 119s.
+  const history = Array.from({ length: 120 }, (_, i) => point(i * 1_000, i, 120 - i))
+
+  it('full keeps the whole run / 全程保留整段', () => {
+    expect(selectTrendSamples(history, 'full')).toHaveLength(120)
+  })
+
+  it('current is a real time window, not a sample count / 當前時段是時間窗而非筆數', () => {
+    const windowed = selectTrendSamples(history, 'current')
+    // The last sample is at 119s, so the window starts at 119s − 60s = 59s.
+    expect(windowed[0].t).toBe(59_000)
+    expect(windowed[windowed.length - 1].t).toBe(119_000)
+    expect(windowed.length).toBe(61)
+  })
+
+  it('falls back to the last two points for a very short run / 極短執行退回最後兩點', () => {
+    expect(selectTrendSamples([point(0, 0, 1), point(1_000, 1, 0)], 'current')).toHaveLength(2)
+  })
+
+  it('handles an empty history / 空歷史', () => {
+    expect(selectTrendSamples([], 'current')).toEqual([])
+    expect(selectTrendSamples([], 'full')).toEqual([])
+  })
+})
+
+describe('downsamplePoints / 降採樣', () => {
+  const points = Array.from({ length: 1_000 }, (_, i) => point(i, i, 0))
+
+  it('caps the count and keeps the last point exact / 限制筆數並保留最後一點', () => {
+    const out = downsamplePoints(points, 240)
+    expect(out).toHaveLength(240)
+    expect(out[out.length - 1]).toBe(points[points.length - 1])
+    expect(out[0]).toBe(points[0])
+  })
+
+  it('returns a copy when already small / 本來就少時回傳副本', () => {
+    const small = [point(0), point(1)]
+    const out = downsamplePoints(small, 240)
+    expect(out).toEqual(small)
+    expect(out).not.toBe(small)
+  })
+})
 
 describe('yAxisWidthFor / Y 軸寬度', () => {
   it('grows with the magnitude / 隨數量級增長', () => {

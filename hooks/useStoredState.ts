@@ -34,7 +34,7 @@ export function readStoredValue<T>(name: string, fallback: T): T {
 }
 
 /** Persist a value; failures are silently ignored (storage is optional). */
-function writeStoredValue(name: string, value: unknown): void {
+export function writeStoredValue(name: string, value: unknown): void {
   try {
     window.localStorage.setItem(storageKey(name), JSON.stringify(value))
   } catch {

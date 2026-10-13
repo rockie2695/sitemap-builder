@@ -310,3 +310,46 @@ describe('options and logs / 選項與日誌', () => {
     expect(state.logs).toHaveLength(0)
   })
 })
+
+describe('history sampling / 歷史取樣', () => {
+  /** Start, complete the start page, then finish the task. */
+  function finished(): CrawlState {
+    return crawlReducer(
+      crawlReducer(
+        crawlReducer(started(), { type: 'page/start', url: TASK.startUrl, pendingCount: 0, now: NOW }),
+        {
+          type: 'page/result',
+          url: TASK.startUrl,
+          ok: true,
+          response: okResponse,
+          discovered: okResponse.links,
+          pendingCount: 2,
+          now: NOW + 500,
+        },
+      ),
+      { type: 'task/finish', now: NOW + 1000 },
+    )
+  }
+
+  it('appends a final sample on finish so the chart never lags / 完成時補上最後取樣', () => {
+    const state = finished()
+    expect(state.phase).toBe('done')
+    expect(state.history[state.history.length - 1]).toEqual({
+      t: NOW + 1000,
+      done: 1,
+      failed: 0,
+      pending: 0,
+    })
+  })
+
+  it('appends a final sample on stop / 停止時補上最後取樣', () => {
+    const state = crawlReducer(started(), { type: 'task/stop', reason: undefined, now: NOW + 2000 })
+    expect(state.phase).toBe('stopped')
+    expect(state.history[state.history.length - 1]).toEqual({
+      t: NOW + 2000,
+      done: 0,
+      failed: 0,
+      pending: 0,
+    })
+  })
+})

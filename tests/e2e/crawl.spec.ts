@@ -306,8 +306,8 @@ test.describe('sitemap builder E2E / 端對端', () => {
     await page.getByRole('radio', { name: 'SEO' }).click()
     await page.getByRole('tab', { name: 'SERP 排名' }).click()
 
-    // A single query: the deliberate 20s interval never applies, so this is fast.
-    await page.getByLabel('每次查询数').fill('1')
+    // A single query per run: the deliberate 20s interval never applies, so this is fast.
+    await page.getByLabel('每次执行查询数').fill('1')
     await page.getByRole('button', { name: '查询排名' }).click()
 
     // Our own site ranks #5 in the stubbed results.

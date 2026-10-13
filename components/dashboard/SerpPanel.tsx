@@ -11,7 +11,7 @@
  */
 'use client'
 
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { AlertTriangle, Play, RotateCcw, Square, Trash2 } from 'lucide-react'
 
 import { useI18n } from '@/components/providers/LocaleProvider'
@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import type { UseSerpResult } from '@/hooks/serp'
+import { useVirtualWindow } from '@/hooks/useVirtualWindow'
 import type { UiKey } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 import type { UrlRecord } from '@/types/crawl'
@@ -75,6 +76,13 @@ function rankStyle(rank: number | null): string {
   return 'border-muted-foreground/40 text-muted-foreground'
 }
 
+/** Fixed SERP row height; must match the virtual window's `rowHeight`. */
+const SERP_ROW_HEIGHT = 44
+
+/** Shared column template for the SERP header and rows. */
+const SERP_GRID =
+  'grid grid-cols-[minmax(0,1.6fr)_72px_minmax(0,1fr)_80px] items-center gap-2'
+
 interface SerpPanelProps {
   /** The crawl archive; audited pages become queries. */
   records: UrlRecord[]
@@ -86,9 +94,15 @@ interface SerpPanelProps {
 export function SerpPanel({ records, serp }: SerpPanelProps) {
   const { t } = useI18n()
   const [selected, setSelected] = useState<string | null>(null)
+  const containerRef = useRef<HTMLDivElement | null>(null)
 
-  const audited = records.filter((record) => record.seo).length
   const { status, queries, results, completed, current, failures, fatal, options } = serp
+  // Only successfully crawled pages become queries; failed (404/5xx) pages are skipped.
+  const audited = records.filter((record) => record.status === 'done' && record.seo).length
+
+  // Virtualised: the list mirrors the audit, so it can hold thousands of rows.
+  const list = useVirtualWindow({ count: queries.length, rowHeight: SERP_ROW_HEIGHT, overscan: 8 })
+  const visible = queries.slice(list.startIndex, list.endIndex)
 
   if (audited === 0) {
     return (
@@ -180,6 +194,7 @@ export function SerpPanel({ records, serp }: SerpPanelProps) {
           <p className="text-[11px] text-muted-foreground">
             {t('serp.costWarning', { n: options.analyzeTop })} {t('serp.notAuditedHint')}
           </p>
+          <p className="text-[11px] text-muted-foreground">{t('serp.rankHint')}</p>
 
           <div className="flex flex-wrap items-center gap-2">
             {running ? (
@@ -259,46 +274,84 @@ export function SerpPanel({ records, serp }: SerpPanelProps) {
         </Card>
       ) : null}
 
-      {/* Results table */}
+      {/* Results table — one virtualised row per audited page */}
       <Card className="min-w-0">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">{t('serp.resultsTitle')}</CardTitle>
+        <CardHeader className="gap-2 pb-3">
+          <CardTitle className="text-base">
+            {t('serp.resultsTitle')}
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              {queries.length.toLocaleString()}
+            </span>
+          </CardTitle>
+          <p className="text-[11px] text-muted-foreground">{t('serp.listHint')}</p>
+          <div
+            className={cn(
+              SERP_GRID,
+              'rounded-md bg-muted/60 px-3 py-1.5 text-[11px] font-medium text-muted-foreground',
+            )}
+          >
+            <span>{t('serp.col.query')}</span>
+            <span>{t('serp.col.rank')}</span>
+            <span>{t('serp.col.top')}</span>
+            <span className="text-right">{t('serp.col.competitors')}</span>
+          </div>
         </CardHeader>
         <CardContent className="px-3">
-          <div className="max-h-[420px] overflow-y-auto rounded-md border">
-            {queries.map((entry) => {
-              const record = results[entry.url]
-              return (
-                <button
-                  key={entry.url}
-                  type="button"
-                  onClick={() => setSelected(record ? entry.url : null)}
-                  disabled={!record}
-                  className={cn(
-                    'grid w-full grid-cols-[minmax(0,1.4fr)_72px_minmax(0,1fr)_80px] items-center gap-2 border-b px-3 py-2 text-left text-xs last:border-b-0 hover:bg-muted/40 disabled:opacity-50',
-                    selected === entry.url && 'bg-muted/60',
-                  )}
-                  title={entry.url}
-                >
-                  <span className="truncate">{entry.query}</span>
-                  <span>
-                    <Badge variant="outline" className={cn('px-1.5 py-0 text-[10px]', record ? rankStyle(record.rank) : '')}>
-                      {record
-                        ? record.rank === null
-                          ? t('serp.rank.none')
-                          : t('serp.rank.value', { rank: record.rank })
-                        : '—'}
-                    </Badge>
-                  </span>
-                  <span className="truncate font-mono text-[11px] text-muted-foreground">
-                    {record?.results[0]?.hostname ?? '—'}
-                  </span>
-                  <span className="text-right tabular-nums text-muted-foreground">
-                    {record ? record.competitors.length : '—'}
-                  </span>
-                </button>
-              )
-            })}
+          <div
+            ref={containerRef}
+            onScroll={list.onScroll}
+            className="h-[420px] overflow-y-auto rounded-md border"
+          >
+            <div className="relative" style={{ height: list.totalHeight }}>
+              <div
+                className="absolute inset-x-0 top-0"
+                style={{ transform: `translateY(${list.paddingTop}px)` }}
+              >
+                {visible.map((entry) => {
+                  const record = results[entry.url]
+                  return (
+                    <button
+                      key={entry.url}
+                      type="button"
+                      onClick={() => setSelected(record ? entry.url : null)}
+                      disabled={!record}
+                      className={cn(
+                        SERP_GRID,
+                        'w-full border-b px-3 text-left text-xs last:border-b-0 hover:bg-muted/40 disabled:opacity-60',
+                        selected === entry.url && 'bg-muted/60',
+                      )}
+                      style={{ height: SERP_ROW_HEIGHT }}
+                      title={entry.url}
+                    >
+                      <span className="flex min-w-0 flex-col">
+                        <span className="truncate">{entry.query}</span>
+                        <span className="truncate font-mono text-[10px] text-muted-foreground">
+                          {entry.url}
+                        </span>
+                      </span>
+                      <span>
+                        <Badge
+                          variant="outline"
+                          className={cn('px-1.5 py-0 text-[10px]', record ? rankStyle(record.rank) : '')}
+                        >
+                          {record
+                            ? record.rank === null
+                              ? t('serp.rank.none')
+                              : t('serp.rank.value', { rank: record.rank })
+                            : '—'}
+                        </Badge>
+                      </span>
+                      <span className="truncate font-mono text-[11px] text-muted-foreground">
+                        {record?.results[0]?.hostname ?? '—'}
+                      </span>
+                      <span className="text-right tabular-nums text-muted-foreground">
+                        {record ? record.competitors.length : '—'}
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
