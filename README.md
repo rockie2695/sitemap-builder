@@ -735,8 +735,8 @@ node --check chunk.js   # exit 0 = valid
 - The vision fallback needs a vision-capable model and only runs when DOM extraction returns nothing
 - TypeScript is pinned to **5.9**: the native `typescript@7` compiler is not yet supported by typescript-eslint and breaks `npm run lint`
 
-![screen-cap1](screen-cap1.png)
-![screen-cap2](screen-cap2.png)
+![screen-cap1](screen_cap1.png)
+![screen-cap2](screen_cap2.png)
 
 ---
 
